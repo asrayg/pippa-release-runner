@@ -40,7 +40,7 @@ jobs:
               {"slug":"pippa-web","name":"Pippa Web","directory":".","project_id":"prj_kJHdyBqBLnXTobPErdEuFbaVXKFR","archive":"true"},
               {"slug":"nuro-web","name":"Nuro Web","directory":"nuro-web","project_id":"prj_uUN1wL1fNNRmfPNkeDK5BZrtM1Nt","archive":"false"},
               {"slug":"clinician-hub","name":"Clinician Hub","directory":"docs-website","project_id":"prj_YxA5wqh1hgZX1QnuQLbhSYmWvZBU","archive":"false"},
-              {"slug":"dashboard","name":"Dashboard","directory":"dashboard","project_id":"prj_fXYe03sXH3tHyd3ZnlL9Qv2v0Zsb","archive":"false"},
+              {"slug":"dashboard","name":"Dashboard","directory":".","project_id":"prj_fXYe03sXH3tHyd3ZnlL9Qv2v0Zsb","archive":"false"},
               {"slug":"legal","name":"Legal","directory":"legal-site","project_id":"prj_fmKPQQ2dLBXuYRrJycbiy8v95Wc9","archive":"false"},
               {"slug":"pixel-studio","name":"Pixel Studio","directory":"tools/pixel-studio","project_id":"prj_QGBl5eCS4OjwWAnzfpFrijJsmM7N","archive":"false"}
             ]}
@@ -69,7 +69,7 @@ jobs:
 
     steps:
       - name: Check out private application source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: asrayg/pippa-mono
           ref: main
