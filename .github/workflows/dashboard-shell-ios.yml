@@ -1,0 +1,95 @@
+name: Upload Pippa For Clinicians to App Store Connect
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pippa-clinicians-app-store-upload
+  cancel-in-progress: false
+
+jobs:
+  build-and-upload:
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: app-store
+
+    steps:
+      - name: Check out private application source
+        uses: actions/checkout@v4
+        with:
+          repository: asrayg/pippa-mono
+          ref: main
+          path: source
+          ssh-key: ${{ secrets.PIPPA_MONO_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Select and verify Xcode 26
+        run: |
+          XC=$(ls -d /Applications/Xcode_26* 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XC" ]; then sudo xcode-select -s "$XC/Contents/Developer"; fi
+          xcodebuild -version
+          xcodebuild -showsdks | grep -qE 'iphoneos2[6-9]'
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: source/dashboard-shell/package-lock.json
+
+      - name: Prepare Capacitor iOS project
+        working-directory: source/dashboard-shell
+        run: |
+          npm ci
+          npx cap sync ios
+          cd ios/App
+          pod install
+
+      - name: Install App Store Connect API key
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s' "$ASC_API_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey.p8"
+          chmod 600 "$RUNNER_TEMP/keys/AuthKey.p8"
+          echo "AUTH_KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
+
+      - name: Archive Pippa For Clinicians
+        working-directory: source/dashboard-shell
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/PippaClinicians.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$AUTH_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM=L6LUXM357X \
+            CURRENT_PROJECT_VERSION="${{ github.run_id }}"
+
+      - name: Export and upload Pippa For Clinicians
+        working-directory: source/dashboard-shell
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/PippaClinicians.xcarchive" \
+            -exportPath "$RUNNER_TEMP/PippaClinicians-export" \
+            -exportOptionsPlist ../ci/ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$AUTH_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
