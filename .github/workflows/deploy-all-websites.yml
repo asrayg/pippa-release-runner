@@ -1,0 +1,75 @@
+name: Deploy all websites to production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: all-websites-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production-web
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Pippa Web
+            directory: .
+            project_id: prj_kJHdyBqBLnXTobPErdEuFbaVXKFR
+            archive: 'true'
+          - name: Nuro Web
+            directory: nuro-web
+            project_id: prj_uUN1wL1fNNRmfPNkeDK5BZrtM1Nt
+            archive: 'false'
+          - name: Clinician Hub
+            directory: docs-website
+            project_id: prj_YxA5wqh1hgZX1QnuQLbhSYmWvZBU
+            archive: 'false'
+          - name: Dashboard
+            directory: dashboard
+            project_id: prj_fXYe03sXH3tHyd3ZnlL9Qv2v0Zsb
+            archive: 'false'
+          - name: Legal
+            directory: legal-site
+            project_id: prj_fmKPQQ2dLBXuYRrJycbiy8v95Wc9
+            archive: 'false'
+          - name: Pixel Studio
+            directory: tools/pixel-studio
+            project_id: prj_QGBl5eCS4OjwWAnzfpFrijJsmM7N
+            archive: 'false'
+
+    env:
+      VERCEL_ORG_ID: team_IjdQsc9kKfZUdaSPNAZTbxMG
+      VERCEL_PROJECT_ID: ${{ matrix.project_id }}
+
+    steps:
+      - name: Check out private application source
+        uses: actions/checkout@v4
+        with:
+          repository: asrayg/pippa-mono
+          ref: main
+          path: source
+          ssh-key: ${{ secrets.PIPPA_MONO_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Deploy ${{ matrix.name }} to production
+        working-directory: source/${{ matrix.directory }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ "${{ matrix.archive }}" = 'true' ]; then
+            vercel deploy --prod --yes --archive=tgz --token="$VERCEL_TOKEN"
+          else
+            vercel deploy --prod --yes --token="$VERCEL_TOKEN"
+          fi
+
