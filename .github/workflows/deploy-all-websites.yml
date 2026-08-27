@@ -1,49 +1,67 @@
-name: Deploy all websites to production
+name: Deploy websites to production
 
 on:
   workflow_dispatch:
+    inputs:
+      site:
+        description: Website to deploy
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - pippa-web
+          - nuro-web
+          - clinician-hub
+          - dashboard
+          - legal
+          - pixel-studio
 
 permissions:
   contents: read
 
 concurrency:
-  group: all-websites-production
+  group: websites-production-${{ inputs.site }}
   cancel-in-progress: false
 
 jobs:
+  select:
+    name: Select websites
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - name: Build deployment matrix
+        id: matrix
+        env:
+          SITE: ${{ inputs.site }}
+          CATALOG: >-
+            {"include":[
+              {"slug":"pippa-web","name":"Pippa Web","directory":".","project_id":"prj_kJHdyBqBLnXTobPErdEuFbaVXKFR","archive":"true"},
+              {"slug":"nuro-web","name":"Nuro Web","directory":"nuro-web","project_id":"prj_uUN1wL1fNNRmfPNkeDK5BZrtM1Nt","archive":"false"},
+              {"slug":"clinician-hub","name":"Clinician Hub","directory":"docs-website","project_id":"prj_YxA5wqh1hgZX1QnuQLbhSYmWvZBU","archive":"false"},
+              {"slug":"dashboard","name":"Dashboard","directory":"dashboard","project_id":"prj_fXYe03sXH3tHyd3ZnlL9Qv2v0Zsb","archive":"false"},
+              {"slug":"legal","name":"Legal","directory":"legal-site","project_id":"prj_fmKPQQ2dLBXuYRrJycbiy8v95Wc9","archive":"false"},
+              {"slug":"pixel-studio","name":"Pixel Studio","directory":"tools/pixel-studio","project_id":"prj_QGBl5eCS4OjwWAnzfpFrijJsmM7N","archive":"false"}
+            ]}
+        run: |
+          if [ "$SITE" = all ]; then
+            selected="$CATALOG"
+          else
+            selected=$(jq -c --arg site "$SITE" \
+              '{include: [.include[] | select(.slug == $site)]}' <<< "$CATALOG")
+          fi
+          echo "value=$(jq -c . <<< "$selected")" >> "$GITHUB_OUTPUT"
+
   deploy:
     name: Deploy ${{ matrix.name }}
+    needs: select
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production-web
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: Pippa Web
-            directory: .
-            project_id: prj_kJHdyBqBLnXTobPErdEuFbaVXKFR
-            archive: 'true'
-          - name: Nuro Web
-            directory: nuro-web
-            project_id: prj_uUN1wL1fNNRmfPNkeDK5BZrtM1Nt
-            archive: 'false'
-          - name: Clinician Hub
-            directory: docs-website
-            project_id: prj_YxA5wqh1hgZX1QnuQLbhSYmWvZBU
-            archive: 'false'
-          - name: Dashboard
-            directory: dashboard
-            project_id: prj_fXYe03sXH3tHyd3ZnlL9Qv2v0Zsb
-            archive: 'false'
-          - name: Legal
-            directory: legal-site
-            project_id: prj_fmKPQQ2dLBXuYRrJycbiy8v95Wc9
-            archive: 'false'
-          - name: Pixel Studio
-            directory: tools/pixel-studio
-            project_id: prj_QGBl5eCS4OjwWAnzfpFrijJsmM7N
-            archive: 'false'
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
 
     env:
       VERCEL_ORG_ID: team_IjdQsc9kKfZUdaSPNAZTbxMG
@@ -72,4 +90,3 @@ jobs:
           else
             vercel deploy --prod --yes --token="$VERCEL_TOKEN"
           fi
-
