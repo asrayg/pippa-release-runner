@@ -76,6 +76,7 @@ jobs:
             CODE_SIGN_STYLE=Automatic \
             CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM=L6LUXM357X \
+            MARKETING_VERSION=1.0.1 \
             CURRENT_PROJECT_VERSION="${{ github.run_id }}"
 
       - name: Export and upload Pippa For Clinicians
@@ -92,4 +93,3 @@ jobs:
             -authenticationKeyPath "$AUTH_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
-
