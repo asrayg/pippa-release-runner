@@ -123,6 +123,37 @@ gh workflow run nuro-ios.yml --repo asrayg/pippa-release-runner
 These workflows upload builds to App Store Connect. They do not automatically
 submit a release for App Review.
 
+## Upload Android apps
+
+Upload Nuro to Google Play. The version code must be higher than every code
+already uploaded for `com.nuro.app`, and the release lands as a draft on the
+chosen track until you promote it in the Play Console:
+
+```bash
+gh workflow run nuro-android.yml \
+  --repo asrayg/pippa-release-runner \
+  --field version_name=1.0.0 \
+  --field version_code=21 \
+  --field track=internal \
+  --field status=draft
+```
+
+This needs five secrets that the iOS pipelines do not use, on a `play-store`
+environment:
+
+| Secret | What it is |
+| --- | --- |
+| `NURO_ANDROID_KEYSTORE_BASE64` | The upload keystore, base64 encoded (`base64 -i nuro-upload.jks`) |
+| `NURO_ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `NURO_ANDROID_KEY_ALIAS` | Key alias inside the keystore |
+| `NURO_ANDROID_KEY_PASSWORD` | Key password |
+| `NURO_PLAY_SERVICE_ACCOUNT_JSON` | Google Play service-account JSON, with Release Manager access to the app |
+
+Google will not let the API create an app listing, and it rejects API uploads
+for a package that has never had a release. **The very first build for
+`com.nuro.app` has to be uploaded by hand in the Play Console**; this workflow
+takes over from the second one.
+
 The marketing version is pinned inside each workflow (`MARKETING_VERSION`);
 bump it there when the app's version changes. The build number is the GitHub
 run id, so it always increases and never collides with a previous upload.
