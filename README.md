@@ -114,8 +114,25 @@ Upload Pippa For Clinicians to App Store Connect:
 gh workflow run dashboard-shell-ios.yml --repo asrayg/pippa-release-runner
 ```
 
+Upload Nuro to App Store Connect:
+
+```bash
+gh workflow run nuro-ios.yml --repo asrayg/pippa-release-runner
+```
+
 These workflows upload builds to App Store Connect. They do not automatically
 submit a release for App Review.
+
+The marketing version is pinned inside each workflow (`MARKETING_VERSION`);
+bump it there when the app's version changes. The build number is the GitHub
+run id, so it always increases and never collides with a previous upload.
+
+Watch an upload:
+
+```bash
+gh run list --repo asrayg/pippa-release-runner --workflow nuro-ios.yml --limit 5
+gh run view --repo asrayg/pippa-release-runner --workflow nuro-ios.yml --log-failed
+```
 
 ## Security
 
