@@ -68,14 +68,30 @@ jobs:
       VERCEL_PROJECT_ID: ${{ matrix.project_id }}
 
     steps:
+      # Deliberately a plain clone rather than actions/checkout. When given an
+      # ssh-key, checkout's credential cleanup always runs
+      #   git submodule foreach --recursive ...
+      # to strip core.sshCommand. pippa-mono's main has carried bare gitlinks
+      # under .claude/worktrees/ (committed agent worktrees, no .gitmodules), so
+      # that pass aborts with "No url found for submodule path" and exit 128,
+      # failing every deploy after the source was already fetched. A clone takes
+      # no credential-cleanup pass and never walks submodules, so a stray
+      # gitlink on main cannot take production deploys down again.
       - name: Check out private application source
-        uses: actions/checkout@v5
-        with:
-          repository: asrayg/pippa-mono
-          ref: main
-          path: source
-          ssh-key: ${{ secrets.PIPPA_MONO_DEPLOY_KEY }}
-          persist-credentials: false
+        env:
+          DEPLOY_KEY: ${{ secrets.PIPPA_MONO_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key="$(mktemp)"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes" \
+            git clone --depth 1 --branch main --no-recurse-submodules \
+            git@github.com:asrayg/pippa-mono.git source
+          rm -f "$key"
+          git -C source log -1 --format='Deploying %h %s'
 
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
