@@ -42,7 +42,7 @@ jobs:
           chmod 600 "$RUNNER_TEMP/keys/AuthKey.p8"
           echo "AUTH_KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
 
-      - name: Archive Nuro 1.0.1
+      - name: Archive Nuro 1.0.0
         working-directory: source
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -61,7 +61,7 @@ jobs:
             CODE_SIGN_STYLE=Automatic \
             CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM=L6LUXM357X \
-            MARKETING_VERSION=1.0.1 \
+            MARKETING_VERSION=1.0.0 \
             CURRENT_PROJECT_VERSION="${{ github.run_id }}"
 
       - name: Export and upload Nuro
