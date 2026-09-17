@@ -42,7 +42,7 @@ jobs:
           chmod 600 "$RUNNER_TEMP/keys/AuthKey.p8"
           echo "AUTH_KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
 
-      - name: Archive Pippa 3.0.6
+      - name: Archive Pippa 3.1.1
         working-directory: source
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -60,7 +60,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM=L6LUXM357X \
-            MARKETING_VERSION=3.0.6 \
+            MARKETING_VERSION=3.1.1 \
             CURRENT_PROJECT_VERSION="${{ github.run_id }}"
 
       - name: Verify the archive kept its entitlements
