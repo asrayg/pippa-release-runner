@@ -59,6 +59,7 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM=L6LUXM357X \
             MARKETING_VERSION=3.0.6 \
             CURRENT_PROJECT_VERSION="${{ github.run_id }}"
