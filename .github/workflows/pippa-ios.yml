@@ -59,10 +59,26 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
-            CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM=L6LUXM357X \
             MARKETING_VERSION=3.0.6 \
             CURRENT_PROJECT_VERSION="${{ github.run_id }}"
+
+      - name: Verify the archive kept its entitlements
+        run: |
+          APP="$RUNNER_TEMP/Pippa.xcarchive/Products/Applications/Pippa.app"
+          ENT=$(codesign -d --entitlements :- "$APP" 2>/dev/null || true)
+          echo "$ENT"
+          # Archiving with CODE_SIGNING_ALLOWED=NO left the app unsigned, and the
+          # export re-sign does NOT restore entitlements from the profile. Every
+          # build shipped that way silently lost Sign in with Apple, push, and
+          # universal links. Catch it here, before anything reaches Apple.
+          for KEY in com.apple.developer.applesignin aps-environment; do
+            if ! echo "$ENT" | grep -q "$KEY"; then
+              echo "::error::Archive is missing '$KEY' - refusing to upload."
+              exit 1
+            fi
+          done
+          echo "Entitlements present."
 
       - name: Export and upload Pippa
         working-directory: source
