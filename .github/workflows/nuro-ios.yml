@@ -10,6 +10,11 @@ concurrency:
   group: nuro-app-store-upload
   cancel-in-progress: false
 
+# The marketing version ships from here, as an xcodebuild override, so it wins
+# over whatever Nuro.xcodeproj carries. Bump this one value to cut a release.
+env:
+  NURO_MARKETING_VERSION: "1.0.3"
+
 jobs:
   build-and-upload:
     runs-on: macos-26
@@ -42,7 +47,7 @@ jobs:
           chmod 600 "$RUNNER_TEMP/keys/AuthKey.p8"
           echo "AUTH_KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
 
-      - name: Archive Nuro 1.0.0
+      - name: Archive Nuro ${{ env.NURO_MARKETING_VERSION }}
         working-directory: source
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -60,7 +65,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM=L6LUXM357X \
-            MARKETING_VERSION=1.0.2 \
+            MARKETING_VERSION="$NURO_MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="${{ github.run_id }}"
 
       - name: Verify the archive kept its entitlements
