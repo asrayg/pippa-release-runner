@@ -100,7 +100,31 @@ jobs:
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
           rm -f "$PLIST" "$PROFILE"
-          echo "PIPPA_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+          echo "PIPPA_APP_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+
+      - name: Install the Pippa widget App Store provisioning profile
+        env:
+          PIPPA_WIDGET_APP_STORE_PROFILE: ${{ secrets.PIPPA_WIDGET_APP_STORE_PROFILE }}
+        run: |
+          if [ -z "$PIPPA_WIDGET_APP_STORE_PROFILE" ]; then
+            echo "::error::PIPPA_WIDGET_APP_STORE_PROFILE is required. Add the base64-encoded App Store profile for com.pippa.app.dailycheckin with group.com.pippa.app."
+            exit 1
+          fi
+          PROFILE="$RUNNER_TEMP/Pippa-Widget-AppStore.mobileprovision"
+          printf '%s' "$PIPPA_WIDGET_APP_STORE_PROFILE" | base64 -d > "$PROFILE"
+          PLIST="$RUNNER_TEMP/Pippa-Widget-AppStore-profile.plist"
+          security cms -D -i "$PROFILE" > "$PLIST"
+          UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PLIST")
+          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PLIST")
+          GROUP=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups:0' "$PLIST")
+          if [ "$APP_ID" != "L6LUXM357X.com.pippa.app.dailycheckin" ] || [ "$GROUP" != "group.com.pippa.app" ]; then
+            echo "::error::Widget profile must be for com.pippa.app.dailycheckin with group.com.pippa.app."
+            exit 1
+          fi
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          rm -f "$PLIST" "$PROFILE"
+          echo "PIPPA_WIDGET_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
 
       - name: Install App Store Connect API key
         env:
@@ -133,7 +157,6 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=L6LUXM357X \
-            PROVISIONING_PROFILE="$PIPPA_PROFILE_UUID" \
             MARKETING_VERSION="$PIPPA_MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="${{ github.run_id }}"
 
