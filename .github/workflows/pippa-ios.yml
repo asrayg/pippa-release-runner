@@ -95,6 +95,9 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          # Keep every build setting in the same continued command. A comment
+          # between a trailing backslash and the next setting ends the command,
+          # which silently falls back to development signing.
           xcodebuild archive \
             -project Pippa/Pippa.xcodeproj \
             -scheme Pippa \
@@ -106,17 +109,6 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
-            # Sign for distribution, explicitly.
-            #
-            # With only CODE_SIGN_STYLE=Automatic, the archive resolved to
-            # DEVELOPMENT signing — the error named "iOS App Development
-            # provisioning profiles" — so Xcode ignored the Apple Distribution
-            # certificate sitting in the keychain and tried to create a
-            # development one instead, which is what hit the certificate cap.
-            #
-            # Naming the identity points it at the certificate that is already
-            # there, leaving only the PROFILE to fetch or create, and profiles
-            # are not capped.
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=L6LUXM357X \
             MARKETING_VERSION="$PIPPA_MARKETING_VERSION" \
@@ -153,4 +145,3 @@ jobs:
             -authenticationKeyPath "$AUTH_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
-
