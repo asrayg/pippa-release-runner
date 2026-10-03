@@ -106,6 +106,18 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
+            # Sign for distribution, explicitly.
+            #
+            # With only CODE_SIGN_STYLE=Automatic, the archive resolved to
+            # DEVELOPMENT signing — the error named "iOS App Development
+            # provisioning profiles" — so Xcode ignored the Apple Distribution
+            # certificate sitting in the keychain and tried to create a
+            # development one instead, which is what hit the certificate cap.
+            #
+            # Naming the identity points it at the certificate that is already
+            # there, leaving only the PROFILE to fetch or create, and profiles
+            # are not capped.
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=L6LUXM357X \
             MARKETING_VERSION="$PIPPA_MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="${{ github.run_id }}"
