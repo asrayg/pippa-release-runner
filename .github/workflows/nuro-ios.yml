@@ -97,6 +97,24 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          # Sign for distribution, explicitly.
+          #
+          # With only CODE_SIGN_STYLE=Automatic, the archive resolved to
+          # DEVELOPMENT signing: the error named "iOS App Development
+          # provisioning profiles", so Xcode ignored the Apple Distribution
+          # certificate sitting in the keychain and tried to create a
+          # development one instead, which is what hit the certificate cap.
+          #
+          # Naming the identity points it at the certificate that is already
+          # there, leaving only the PROFILE to fetch or create, and profiles
+          # are not capped.
+          #
+          # Every build setting has to stay in one continued command. These
+          # comments used to sit BETWEEN a trailing backslash and
+          # CODE_SIGN_IDENTITY, which ends the command there: the identity, the
+          # team and both version overrides were never passed, so the fix the
+          # comment describes never actually applied. Keep comments above the
+          # xcodebuild line, never inside it.
           xcodebuild archive \
             -project Nuro/Nuro.xcodeproj \
             -scheme Nuro \
@@ -108,17 +126,6 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
-            # Sign for distribution, explicitly.
-            #
-            # With only CODE_SIGN_STYLE=Automatic, the archive resolved to
-            # DEVELOPMENT signing — the error named "iOS App Development
-            # provisioning profiles" — so Xcode ignored the Apple Distribution
-            # certificate sitting in the keychain and tried to create a
-            # development one instead, which is what hit the certificate cap.
-            #
-            # Naming the identity points it at the certificate that is already
-            # there, leaving only the PROFILE to fetch or create, and profiles
-            # are not capped.
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=L6LUXM357X \
             MARKETING_VERSION="$NURO_MARKETING_VERSION" \
