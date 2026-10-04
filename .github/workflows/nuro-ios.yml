@@ -82,6 +82,35 @@ jobs:
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
           security find-identity -v -p codesigning "$KC"
 
+      # Manual distribution signing needs the App Store profile locally as well
+      # as the certificate. Automatic signing cannot be used here: it resolves
+      # DEVELOPMENT provisioning, which both conflicts with an explicit
+      # distribution identity and tries to create a development certificate,
+      # and the account is at its certificate cap.
+      - name: Install the Nuro App Store provisioning profile
+        env:
+          NURO_APP_STORE_PROFILE: ${{ secrets.NURO_APP_STORE_PROFILE }}
+        run: |
+          if [ -z "$NURO_APP_STORE_PROFILE" ]; then
+            echo "::error::NURO_APP_STORE_PROFILE is required. Add the base64-encoded App Store profile for com.getpippa.app.Nuro."
+            exit 1
+          fi
+          PROFILE="$RUNNER_TEMP/Nuro-AppStore.mobileprovision"
+          printf '%s' "$NURO_APP_STORE_PROFILE" | base64 -d > "$PROFILE"
+          PLIST="$RUNNER_TEMP/Nuro-AppStore-profile.plist"
+          security cms -D -i "$PROFILE" > "$PLIST"
+          UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PLIST")
+          NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PLIST")
+          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PLIST")
+          if [ "$APP_ID" != "L6LUXM357X.com.getpippa.app.Nuro" ]; then
+            echo "::error::Profile is for $APP_ID, expected L6LUXM357X.com.getpippa.app.Nuro."
+            exit 1
+          fi
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          rm -f "$PLIST" "$PROFILE"
+          echo "NURO_PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+
       - name: Install App Store Connect API key
         env:
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
@@ -125,8 +154,9 @@ jobs:
             -authenticationKeyPath "$AUTH_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$NURO_PROFILE_NAME" \
             DEVELOPMENT_TEAM=L6LUXM357X \
             MARKETING_VERSION="$NURO_MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="${{ github.run_id }}"
