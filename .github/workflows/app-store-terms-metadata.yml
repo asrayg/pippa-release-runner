@@ -1,0 +1,77 @@
+name: Fix App Store Terms metadata
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-metadata:
+    runs-on: macos-26
+    environment: app-store
+    steps:
+      - name: Add the standard EULA link to Pippa and Nuro descriptions
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$ASC_API_KEY_P8" > "$key"
+          chmod 600 "$key"
+
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          now=$(date +%s)
+          exp=$((now + 900))
+          header=$(printf '{"alg":"ES256","kid":"%s","typ":"JWT"}' "$ASC_KEY_ID" | b64url)
+          payload=$(printf '{"iss":"%s","iat":%s,"exp":%s,"aud":"appstoreconnect-v1"}' "$ASC_ISSUER_ID" "$now" "$exp" | b64url)
+          unsigned="$header.$payload"
+          signature=$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key" | b64url)
+          token="$unsigned.$signature"
+          api='https://api.appstoreconnect.apple.com/v1'
+          eula='https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'
+
+          request() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $token" \
+              -H 'Content-Type: application/json' "$@"
+          }
+
+          for bundle_id in com.pippa.app com.getpippa.app.Nuro; do
+            app_json=$(request "$api/apps?filter%5BbundleId%5D=$bundle_id&limit=1")
+            app_id=$(jq -er '.data[0].id' <<<"$app_json")
+            versions=$(request "$api/apps/$app_id/appStoreVersions?filter%5Bplatform%5D=IOS&limit=50")
+            version_id=$(jq -er '
+              [.data[] | select(.attributes.appStoreState == "PREPARE_FOR_SUBMISSION"
+                or .attributes.appStoreState == "DEVELOPER_REJECTED"
+                or .attributes.appStoreState == "REJECTED")]
+              | sort_by(.attributes.versionString | split(".") | map(tonumber))
+              | last.id' <<<"$versions")
+            version_string=$(jq -er --arg id "$version_id" '.data[] | select(.id == $id) | .attributes.versionString' <<<"$versions")
+            localizations=$(request "$api/appStoreVersions/$version_id/appStoreVersionLocalizations?limit=50")
+
+            count=$(jq '.data | length' <<<"$localizations")
+            if [[ "$count" -eq 0 ]]; then
+              echo "::error::$bundle_id $version_string has no App Store localizations"
+              exit 1
+            fi
+
+            while IFS=$'\t' read -r localization_id locale encoded_description; do
+              description=$(printf '%s' "$encoded_description" | openssl base64 -d -A)
+              if grep -Fq "$eula" <<<"$description"; then
+                echo "$bundle_id $version_string [$locale]: Terms link already present"
+                continue
+              fi
+              updated_description="${description}"$'\n\n'"Terms of Use (EULA): $eula"
+              body=$(jq -n \
+                --arg id "$localization_id" \
+                --arg description "$updated_description" \
+                '{data:{type:"appStoreVersionLocalizations",id:$id,attributes:{description:$description}}}')
+              request -X PATCH -d "$body" "$api/appStoreVersionLocalizations/$localization_id" >/dev/null
+              echo "$bundle_id $version_string [$locale]: added Terms link"
+            done < <(jq -r '.data[] | [.id, .attributes.locale, (.attributes.description | @base64)] | @tsv' <<<"$localizations")
+          done
