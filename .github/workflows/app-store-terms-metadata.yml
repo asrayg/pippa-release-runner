@@ -30,7 +30,12 @@ jobs:
           header=$(printf '{"alg":"ES256","kid":"%s","typ":"JWT"}' "$ASC_KEY_ID" | b64url)
           payload=$(printf '{"iss":"%s","iat":%s,"exp":%s,"aud":"appstoreconnect-v1"}' "$ASC_ISSUER_ID" "$now" "$exp" | b64url)
           unsigned="$header.$payload"
-          signature=$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key" | b64url)
+          # OpenSSL emits an ASN.1 DER ECDSA signature; JWT ES256 requires the
+          # raw, fixed-width r || s form.
+          signature=$(printf '%s' "$unsigned" \
+            | openssl dgst -sha256 -sign "$key" \
+            | ruby -ropenssl -e 'sig = OpenSSL::ASN1.decode(STDIN.binmode.read); print sig.value.map { |i| i.value.to_s(2).rjust(32, "\0") }.join' \
+            | b64url)
           token="$unsigned.$signature"
           api='https://api.appstoreconnect.apple.com/v1'
           eula='https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'
