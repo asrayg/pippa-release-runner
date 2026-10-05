@@ -50,10 +50,14 @@ jobs:
             app_json=$(request "$api/apps?filter%5BbundleId%5D=$bundle_id&limit=1")
             app_id=$(jq -er '.data[0].id' <<<"$app_json")
             versions=$(request "$api/apps/$app_id/appStoreVersions?filter%5Bplatform%5D=IOS&limit=50")
+            echo "$bundle_id versions: $(jq -r '[.data[] | "\(.attributes.versionString)=\(.attributes.appStoreState)"] | join(", ")' <<<"$versions")"
             version_id=$(jq -er '
               [.data[] | select(.attributes.appStoreState == "PREPARE_FOR_SUBMISSION"
                 or .attributes.appStoreState == "DEVELOPER_REJECTED"
-                or .attributes.appStoreState == "REJECTED")]
+                or .attributes.appStoreState == "REJECTED"
+                or .attributes.appStoreState == "METADATA_REJECTED"
+                or .attributes.appStoreState == "WAITING_FOR_REVIEW"
+                or .attributes.appStoreState == "READY_FOR_REVIEW")]
               | sort_by(.attributes.versionString | split(".") | map(tonumber))
               | last.id' <<<"$versions")
             version_string=$(jq -er --arg id "$version_id" '.data[] | select(.id == $id) | .attributes.versionString' <<<"$versions")
