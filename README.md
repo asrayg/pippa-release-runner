@@ -28,8 +28,8 @@ gh workflow run deploy-all-websites.yml \
   --field site=all
 ```
 
-This deploys Pippa Web, Nuro Web, Clinician Hub, Dashboard, Legal, and Pixel
-Studio in parallel.
+This deploys Pippa Web, Nuro Web, Clinician Hub, Dashboard, Legal, Pixel
+Studio, and the companion app sites in parallel.
 
 ### Deploy one website
 
@@ -43,6 +43,7 @@ Replace the value after `site=` with one of the values in the table.
 | Dashboard | `dashboard` |
 | Legal | `legal` |
 | Pixel Studio | `pixel-studio` |
+| Companion app sites (Kipi, Soli, Momo, Lumi, Rumi, Miya, Nomi, join) | `companion-web` |
 
 Examples:
 

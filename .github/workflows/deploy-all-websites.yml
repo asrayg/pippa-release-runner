@@ -16,6 +16,7 @@ on:
           - dashboard
           - legal
           - pixel-studio
+          - companion-web
 
 permissions:
   contents: read
@@ -42,7 +43,8 @@ jobs:
               {"slug":"clinician-hub","name":"Clinician Hub","directory":"docs-website","project_id":"prj_YxA5wqh1hgZX1QnuQLbhSYmWvZBU","archive":"false"},
               {"slug":"dashboard","name":"Dashboard","directory":".","project_id":"prj_fXYe03sXH3tHyd3ZnlL9Qv2v0Zsb","archive":"false"},
               {"slug":"legal","name":"Legal","directory":"legal-site","project_id":"prj_fmKPQQ2dLBXuYRrJycbiy8v95Wc9","archive":"false"},
-              {"slug":"pixel-studio","name":"Pixel Studio","directory":"tools/pixel-studio","project_id":"prj_QGBl5eCS4OjwWAnzfpFrijJsmM7N","archive":"false"}
+              {"slug":"pixel-studio","name":"Pixel Studio","directory":"tools/pixel-studio","project_id":"prj_QGBl5eCS4OjwWAnzfpFrijJsmM7N","archive":"false"},
+              {"slug":"companion-web","name":"Companion apps (seven <app>.getpippa.app sites + join.getpippa.app)","directory":"companion-web","project_id":"prj_pnwi226hIUPZpUqa1QRRfVHzduJR","archive":"false"}
             ]}
         run: |
           if [ "$SITE" = all ]; then
