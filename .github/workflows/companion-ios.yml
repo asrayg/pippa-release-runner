@@ -185,7 +185,7 @@ jobs:
                 '{data:{type:"bundleIds",attributes:{identifier:$id,name:$n,platform:"IOS"}}}')" | jq -er '.data.id')
             fi
 
-            HAVE=$(req "$API/bundleIds/$BID/bundleIdCapabilities?limit=50" | jq -r '[.data[].attributes.capabilityType] | join(" ")')
+            HAVE=$(req "$API/bundleIds/$BID/bundleIdCapabilities" | jq -r '[.data[].attributes.capabilityType] | join(" ")')
             for CAP in $CAPS; do
               if [[ " $HAVE " == *" $CAP "* ]]; then echo "$CAP already on."; continue; fi
               echo "Turning on $CAP for $BUNDLE_ID."
