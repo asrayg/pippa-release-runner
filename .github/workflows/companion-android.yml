@@ -1,0 +1,238 @@
+name: Upload companion apps to Google Play
+
+# The seven Pippa companion apps (Soli, Kipi, Momo, Lumi, Rumi, Miya, Nomi).
+# They live in pippa-mono's Android/ Gradle build as :apps:<app>; the package
+# name comes from contracts/product-registry/release.json on main.
+#
+# The Nuro-side structured apps (Vela, Aven, Onda, Sero, Talo, Elio, Aster)
+# are on hold and deliberately not listed.
+#
+# Google rejects API uploads for a package that has never had a release, so
+# each app's FIRST bundle has to be uploaded by hand in the Play Console (an
+# artifact of this run works). This workflow takes over from the second one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App to upload (all = the seven in parallel)
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - soli
+          - kipi
+          - momo
+          - lumi
+          - rumi
+          - miya
+          - nomi
+      version_name:
+        description: Version name shown in Play
+        required: true
+        default: '1.0.0'
+      version_code:
+        description: Version code. Leave empty for 1000 + this workflow's run number, which always goes up.
+        required: false
+        default: ''
+      track:
+        description: Play track to publish to
+        required: true
+        default: internal
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+      status:
+        description: Release status on that track
+        required: true
+        default: draft
+        type: choice
+        options:
+          - draft
+          - completed
+      upload:
+        description: Upload to Play (off = build and keep the signed bundle only, for the first manual upload)
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    name: Select apps
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - name: Build the app matrix
+        id: matrix
+        env:
+          APP: ${{ inputs.app }}
+        run: |
+          ALL='["soli","kipi","momo","lumi","rumi","miya","nomi"]'
+          if [ "$APP" = all ]; then apps="$ALL"; else apps="[\"$APP\"]"; fi
+          echo "value=$(jq -c '{app: .}' <<< "$apps")" >> "$GITHUB_OUTPUT"
+
+  build-and-upload:
+    name: ${{ matrix.app }}
+    needs: select
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: play-store
+    concurrency:
+      group: companion-play-${{ matrix.app }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    env:
+      APP: ${{ matrix.app }}
+      VERSION_NAME: ${{ inputs.version_name }}
+      VERSION_CODE_INPUT: ${{ inputs.version_code }}
+
+    steps:
+      # A plain clone, not actions/checkout (see companion-ios.yml).
+      - name: Check out private application source
+        env:
+          DEPLOY_KEY: ${{ secrets.PIPPA_MONO_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key="$(mktemp)"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes" \
+            git clone --depth 1 --branch main --no-recurse-submodules \
+            git@github.com:asrayg/pippa-mono.git source
+          rm -f "$key"
+          git -C source log -1 --format='Building %h %s'
+
+      - name: Read the app from the release registry
+        working-directory: source
+        run: |
+          set -euo pipefail
+          # Expressions cannot add, so the default version code is worked out here.
+          VERSION_CODE="${VERSION_CODE_INPUT:-$((1000 + ${{ github.run_number }}))}"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          PACKAGE=$(jq -er --arg a "$APP" '.products[$a].android.application_id' contracts/product-registry/release.json)
+          echo "PACKAGE=$PACKAGE" >> "$GITHUB_ENV"
+          echo "$APP: $PACKAGE $VERSION_NAME ($VERSION_CODE)"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-family-release-${{ hashFiles('source/Android/**/*.gradle*', 'source/Android/gradle/libs.versions.toml') }}
+          restore-keys: gradle-family-release-
+
+      # Push needs the Firebase client config. It is git-ignored in pippa-mono,
+      # so it comes from FAMILY_GOOGLE_SERVICES_JSON: one google-services.json
+      # holding a client for every family package (Firebase project
+      # pippa-35814). The google-services plugin picks the client whose package
+      # matches, and Android/build.gradle.kts only applies the plugin when the
+      # file exists, so a missing client would silently ship an app with no
+      # push. Fail instead.
+      - name: Install the Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.FAMILY_GOOGLE_SERVICES_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::FAMILY_GOOGLE_SERVICES_JSON is not set; the app would ship without push."
+            exit 1
+          fi
+          OUT="source/Android/apps/$APP/google-services.json"
+          printf '%s' "$GOOGLE_SERVICES_JSON" > "$OUT"
+          if ! jq -e --arg p "$PACKAGE" '[.client[].client_info.android_client_info.package_name] | index($p)' "$OUT" >/dev/null; then
+            echo "::error::FAMILY_GOOGLE_SERVICES_JSON has no Firebase client for $PACKAGE."
+            exit 1
+          fi
+
+      # One upload keystore for the seven apps, held as a base64 secret and
+      # handed to Android/build.gradle.kts through the environment (it reads
+      # RELEASE_STORE_FILE and friends, per-app <APP>_ keys first).
+      - name: Install the upload keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.FAMILY_ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.FAMILY_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.FAMILY_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.FAMILY_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::FAMILY_ANDROID_KEYSTORE_BASE64 is not set. Play only accepts a signed bundle."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keys/family-upload.jks"
+          chmod 600 "$RUNNER_TEMP/keys/family-upload.jks"
+          {
+            echo "RELEASE_STORE_FILE=$RUNNER_TEMP/keys/family-upload.jks"
+            echo "RELEASE_STORE_PASSWORD=$STORE_PASSWORD"
+            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS"
+            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build the release bundle
+        working-directory: source/Android
+        run: |
+          # The APK is only for the R8 keep check below; R8 runs once for both.
+          ./gradlew ":apps:$APP:bundleRelease" ":apps:$APP:assembleRelease" --no-daemon --stacktrace \
+            -PversionCode="$VERSION_CODE" \
+            -PversionName="$VERSION_NAME"
+
+      - name: Confirm the bundle is signed and minified
+        working-directory: source/Android
+        run: |
+          set -euo pipefail
+          AAB=$(ls "apps/$APP/build/outputs/bundle/release/"*.aab | head -1)
+          ls -la "$AAB"
+          echo "AAB=source/Android/$AAB" >> "$GITHUB_ENV"
+          if ! unzip -l "$AAB" | grep -qE 'META-INF/.*\.(RSA|DSA|EC)'; then
+            echo "::error::$AAB is unsigned. Check the keystore secrets."
+            exit 1
+          fi
+          # R8 must have run: the release build ships with a mapping file.
+          ls "apps/$APP/build/outputs/mapping/release/mapping.txt"
+          # And the R8 keep rules held for the classes the apps load by name.
+          (cd .. && node scripts/check-r8-keeps.mjs "$APP")
+
+      - name: Upload to Google Play
+        if: inputs.upload
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.FAMILY_PLAY_SERVICE_ACCOUNT_JSON || secrets.PIPPA_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.PACKAGE }}
+          releaseFiles: ${{ env.AAB }}
+          mappingFile: source/Android/apps/${{ matrix.app }}/build/outputs/mapping/release/mapping.txt
+          track: ${{ inputs.track }}
+          status: ${{ inputs.status }}
+
+      - name: Keep the bundle for the record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-${{ inputs.version_name }}-${{ env.VERSION_CODE }}-aab
+          path: |
+            source/Android/apps/${{ matrix.app }}/build/outputs/bundle/release/*.aab
+            source/Android/apps/${{ matrix.app }}/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: warn
+          retention-days: 30
