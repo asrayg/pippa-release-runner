@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 env:
-  PIPPA_MARKETING_VERSION: "3.1.4"
+  PIPPA_MARKETING_VERSION: "3.2.2"
 
 permissions:
   contents: read
