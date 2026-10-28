@@ -185,7 +185,7 @@ jobs:
             echo "group $(jq -r --arg g "$g" '.data[] | select(.id==$g) | .attributes.referenceName' <<<"$SGROUPS"): $(jq -c '[.data[] | {l:.attributes.locale, n:.attributes.name}]' <<<"$GL")"
             if writes; then
               for gl in $(jq -r '.data[].id' <<<"$GL"); do
-                req -X PATCH "$API/subscriptionGroupLocalizations/$gl" -d "$(jq -n --arg id "$gl" '{data:{type:"subscriptionGroupLocalizations",id:$id,attributes:{name:"Pippa Companions Pro"}}}')" >/dev/null
+                req -X PATCH "$API/subscriptionGroupLocalizations/$gl" -d "$(jq -n --arg id "$gl" '{data:{type:"subscriptionGroupLocalizations",id:$id,attributes:{name:"Pippa Companions Pro"}}}')" >/dev/null || echo "::warning::group name can't change in this state; rename it in App Store Connect"
               done
             fi
             SUBS=$(req "$API/subscriptionGroups/$g/subscriptions")
@@ -198,7 +198,7 @@ jobs:
               if writes; then
                 for sl in $(jq -r '.data[].id' <<<"$SL"); do
                   req -X PATCH "$API/subscriptionLocalizations/$sl" -d "$(jq -n --arg id "$sl" --arg n "Pippa Companions Pro $Plan" --arg d "Extras in every program, billed each $per." \
-                    '{data:{type:"subscriptionLocalizations",id:$id,attributes:{name:$n,description:$d}}}')" >/dev/null
+                    '{data:{type:"subscriptionLocalizations",id:$id,attributes:{name:$n,description:$d}}}')" >/dev/null || echo "::warning::$pid name can't change in this state"
                 done
               fi
             done
