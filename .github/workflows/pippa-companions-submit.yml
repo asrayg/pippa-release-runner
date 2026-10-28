@@ -1,0 +1,250 @@
+name: Pippa Companions App Store submission
+
+# Pippa Companions is Kipi's App Store record (6824053810, com.getpippa.app.Kipi)
+# carrying every family program plus Nuro (pippa-mono docs/pippa-companion-apps/31).
+# This sets the record's metadata, screenshots, subscription names and review
+# notes through the App Store Connect API, attaches a build, and (mode=submit)
+# sends it to App Review.
+#
+#   inspect  print what is there now, change nothing
+#   apply    update metadata, screenshots, subscriptions, review notes, build
+#   submit   apply, then submit for review
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: inspect, apply or submit
+        required: true
+        default: inspect
+        type: choice
+        options: [inspect, apply, submit]
+      build_number:
+        description: Build number (CFBundleVersion) to attach; blank = newest valid build of 1.0.0
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    environment: app-store
+    timeout-minutes: 90
+    env:
+      APP_ID: '6824053810'
+      VERSION: '1.0.0'
+      MODE: ${{ inputs.mode }}
+      BUILD_NUMBER: ${{ inputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$ASC_API_KEY_P8" > "$key"; chmod 600 "$key"
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          mint() {
+            local now exp header payload sig
+            now=$(date +%s); exp=$((now + 1100))
+            header=$(printf '{"alg":"ES256","kid":"%s","typ":"JWT"}' "$ASC_KEY_ID" | b64url)
+            payload=$(printf '{"iss":"%s","iat":%s,"exp":%s,"aud":"appstoreconnect-v1"}' "$ASC_ISSUER_ID" "$now" "$exp" | b64url)
+            sig=$(printf '%s' "$header.$payload" | openssl dgst -sha256 -sign "$key" \
+              | ruby -ropenssl -e 'sig = OpenSSL::ASN1.decode(STDIN.binmode.read); print sig.value.map { |i| i.value.to_s(2).rjust(32, "\0") }.join' | b64url)
+            TOKEN="$header.$payload.$sig"; TOKEN_AT=$now
+          }
+          mint
+          API=https://api.appstoreconnect.apple.com/v1
+          req() {
+            [ $(( $(date +%s) - TOKEN_AT )) -gt 900 ] && mint
+            local out code
+            out=$(curl --silent --show-error -w '\n%{http_code}' -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@")
+            code=$(tail -n1 <<<"$out"); out=$(sed '$d' <<<"$out")
+            if [ "$code" -ge 400 ]; then echo "::error::HTTP $code for $*" >&2; echo "$out" >&2; return 1; fi
+            printf '%s' "$out"
+          }
+          writes() { [ "$MODE" != inspect ]; }
+
+          # ---------------------------------------------------------------- copy
+          NAME='Pippa Companions'
+          SUBTITLE='Care programs in one calm app'
+          PRIVACY_URL='https://legal.getpippa.app/family-privacy'
+          SUPPORT_URL='https://legal.getpippa.app/support'
+          MARKETING_URL='https://kipi.getpippa.app'
+          KEYWORDS='POTS,diabetes,bariatric,IBS,gut,cancer,recovery,older adults,meal log,care team,hydration'
+          PROMO='Pick the program your care team set up, then log meals and how you feel, in a companion style or a plain one.'
+          read -r -d '' DESCRIPTION <<'TXT' || true
+          Pippa Companions is one app with a program for each kind of care. Open it, pick the program your care team set up for you, and log what matters in that program, at your own pace.
+
+          PROGRAMS
+          Each area has two styles: a companion who keeps you company while you log, or a plain log with no extras.
+          - Hydration and POTS: fluids, salt and how you feel when you stand (Soli or Vela)
+          - Diabetes: meals next to your readings (Kipi or Aven)
+          - Bariatric surgery: each stage after surgery, at your team's pace (Momo or Onda)
+          - IBS and gut symptoms: meals and symptoms, side by side (Lumi or Sero)
+          - After surgery or a new medication: eating while you recover (Rumi or Talo)
+          - Cancer treatment: eating through treatment, with family helping if you like (Miya or Elio)
+          - Older adults: simple logging, with a helper if you want one (Nomi or Aster)
+          - Eating recovery: structure and support around meals, for adults (Nuro)
+
+          HOW IT WORKS
+          - Pick your program from a home screen of icons. Press and hold any icon to see what it's for.
+          - Each program has its own sign-in, and you can switch programs later in Settings.
+          - Connect with your care team using the invite or code your clinic gives you, and choose what they can see.
+          - Log meals by photo, voice or a few taps. No food is ever called good or bad.
+          - Safety information stays one tap away in every program.
+
+          Pippa Companions supports the plan you and your care team make. It does not diagnose, treat or replace medical care. If you feel unwell, contact your care team, and in an emergency call your local emergency number.
+
+          PRO
+          Logging, sharing with your care team and safety help are free. One optional Pippa Companions Pro subscription adds extras in every program. It renews automatically unless canceled at least 24 hours before the end of the period, and you can manage it in your Apple Account settings.
+
+          Terms of Use (EULA): https://legal.getpippa.app/family-terms
+          Privacy Policy: https://legal.getpippa.app/family-privacy
+          TXT
+          DESCRIPTION=$(sed 's/^          //' <<<"$DESCRIPTION")
+          read -r -d '' NOTES <<'TXT' || true
+          Thank you for the earlier feedback (Guideline 4.3(a)). We consolidated our separate condition apps into this single app, Pippa Companions. The Soli, Momo, Lumi, Rumi, Miya and Nomi submissions were withdrawn and will not be resubmitted.
+
+          On first launch the app shows a home screen of programs (press and hold an icon to read what it is for). Each area (hydration and POTS, diabetes, bariatric surgery, IBS, recovery after surgery or a new medication, cancer treatment, older adults) has a companion style and a plain style, plus an Eating recovery program for adults. Each program has its own condition-specific logging, care-team connection and safety content, and its own sign-in.
+
+          Demo account: see the sign-in fields. It works in the Kipi program (Diabetes, companion style) and in Eating recovery. Any program also lets you create a new account by email.
+
+          - Subscriptions: one Pippa Companions Pro group (weekly, monthly, yearly), shared by every program. Restore Purchases is on every paywall.
+          - HealthKit is read-only and used only in the Diabetes programs, for glucose readings and workouts the person chooses to share.
+          - Sign in with Apple appears only in Eating recovery, alongside email.
+          - Account deletion: Settings, Account, Delete account, in every program.
+          - AI is used only to name foods in meal photos when the person turns it on; there is no open AI chat.
+          Contact: pippa.app.general@gmail.com
+          TXT
+          NOTES=$(sed 's/^          //' <<<"$NOTES")
+          echo "description ${#DESCRIPTION} chars, keywords ${#KEYWORDS}, subtitle ${#SUBTITLE}, notes ${#NOTES}"
+
+          # ------------------------------------------------------------- version
+          V=$(req "$API/apps/$APP_ID/appStoreVersions?filter%5Bplatform%5D=IOS&limit=20")
+          echo "versions: $(jq -r '[.data[] | "\(.attributes.versionString)=\(.attributes.appStoreState)"] | join(", ")' <<<"$V")"
+          VID=$(jq -er --arg v "$VERSION" '[.data[] | select(.attributes.versionString == $v)][0].id' <<<"$V")
+
+          # ------------------------------------------------------------ app info
+          INFOS=$(req "$API/apps/$APP_ID/appInfos")
+          INFO=$(jq -er '[.data[] | select(.attributes.appStoreState != "READY_FOR_SALE")][0].id // .data[0].id' <<<"$INFOS")
+          IL=$(req "$API/appInfos/$INFO/appInfoLocalizations")
+          echo "app info: $(jq -c '[.data[] | {l:.attributes.locale, name:.attributes.name, sub:.attributes.subtitle}]' <<<"$IL")"
+          ILID=$(jq -er '[.data[] | select(.attributes.locale == "en-US")][0].id' <<<"$IL")
+          if writes; then
+            req -X PATCH "$API/appInfoLocalizations/$ILID" -d "$(jq -n --arg id "$ILID" --arg n "$NAME" --arg s "$SUBTITLE" --arg p "$PRIVACY_URL" \
+              '{data:{type:"appInfoLocalizations",id:$id,attributes:{name:$n,subtitle:$s,privacyPolicyUrl:$p}}}')" >/dev/null && echo "name and subtitle set"
+          fi
+
+          # ---------------------------------------------------- version metadata
+          VL=$(req "$API/appStoreVersions/$VID/appStoreVersionLocalizations")
+          echo "version locales: $(jq -r '[.data[].attributes.locale] | join(", ")' <<<"$VL")"
+          VLID=$(jq -er '[.data[] | select(.attributes.locale == "en-US")][0].id' <<<"$VL")
+          if writes; then
+            req -X PATCH "$API/appStoreVersionLocalizations/$VLID" -d "$(jq -n --arg id "$VLID" --arg d "$DESCRIPTION" --arg k "$KEYWORDS" --arg p "$PROMO" --arg su "$SUPPORT_URL" --arg m "$MARKETING_URL" \
+              '{data:{type:"appStoreVersionLocalizations",id:$id,attributes:{description:$d,keywords:$k,promotionalText:$p,supportUrl:$su,marketingUrl:$m}}}')" >/dev/null && echo "description set"
+          fi
+
+          # --------------------------------------------------------- screenshots
+          SETS=$(req "$API/appStoreVersionLocalizations/$VLID/appScreenshotSets?include=appScreenshots")
+          echo "screenshot sets: $(jq -r '[.data[] | "\(.attributes.screenshotDisplayType)=\(.relationships.appScreenshots.data | length)"] | join(", ")' <<<"$SETS")"
+          if writes; then
+            for sid in $(jq -r '.data[].relationships.appScreenshots.data[]?.id' <<<"$SETS"); do req -X DELETE "$API/appScreenshots/$sid" >/dev/null; done
+            SET=$(jq -r '[.data[] | select(.attributes.screenshotDisplayType == "APP_IPHONE_67")][0].id // empty' <<<"$SETS")
+            if [ -z "$SET" ]; then
+              SET=$(req -X POST "$API/appScreenshotSets" -d "$(jq -n --arg l "$VLID" \
+                '{data:{type:"appScreenshotSets",attributes:{screenshotDisplayType:"APP_IPHONE_67"},relationships:{appStoreVersionLocalization:{data:{type:"appStoreVersionLocalizations",id:$l}}}}}')" | jq -er '.data.id')
+            fi
+            for f in assets/pippa-companions/screenshots/*.png; do
+              size=$(stat -c %s "$f"); name=$(basename "$f")
+              R=$(req -X POST "$API/appScreenshots" -d "$(jq -n --arg n "$name" --argjson s "$size" --arg set "$SET" \
+                '{data:{type:"appScreenshots",attributes:{fileName:$n,fileSize:$s},relationships:{appScreenshotSet:{data:{type:"appScreenshotSets",id:$set}}}}}')")
+              SHOT=$(jq -er '.data.id' <<<"$R")
+              jq -c '.data.attributes.uploadOperations[]' <<<"$R" | while read -r op; do
+                url=$(jq -r .url <<<"$op"); off=$(jq -r .offset <<<"$op"); len=$(jq -r .length <<<"$op")
+                hdrs=(); while read -r h; do hdrs+=(-H "$h"); done < <(jq -r '.requestHeaders[] | "\(.name): \(.value)"' <<<"$op")
+                tail -c +$((off + 1)) "$f" | head -c "$len" | curl --fail --silent --show-error -X "$(jq -r .method <<<"$op")" "${hdrs[@]}" --data-binary @- "$url" >/dev/null
+              done
+              md5=$(md5sum "$f" | cut -d' ' -f1)
+              req -X PATCH "$API/appScreenshots/$SHOT" -d "$(jq -n --arg id "$SHOT" --arg m "$md5" '{data:{type:"appScreenshots",id:$id,attributes:{uploaded:true,sourceFileChecksum:$m}}}')" >/dev/null
+              echo "uploaded $name"
+            done
+          fi
+
+          # ------------------------------------------------------- subscriptions
+          SGROUPS=$(req "$API/apps/$APP_ID/subscriptionGroups")
+          for g in $(jq -r '.data[].id' <<<"$SGROUPS"); do
+            GL=$(req "$API/subscriptionGroups/$g/subscriptionGroupLocalizations")
+            echo "group $(jq -r --arg g "$g" '.data[] | select(.id==$g) | .attributes.referenceName' <<<"$SGROUPS"): $(jq -c '[.data[] | {l:.attributes.locale, n:.attributes.name}]' <<<"$GL")"
+            if writes; then
+              for gl in $(jq -r '.data[].id' <<<"$GL"); do
+                req -X PATCH "$API/subscriptionGroupLocalizations/$gl" -d "$(jq -n --arg id "$gl" '{data:{type:"subscriptionGroupLocalizations",id:$id,attributes:{name:"Pippa Companions Pro"}}}')" >/dev/null
+              done
+            fi
+            SUBS=$(req "$API/subscriptionGroups/$g/subscriptions")
+            for s in $(jq -r '.data[].id' <<<"$SUBS"); do
+              pid=$(jq -r --arg s "$s" '.data[] | select(.id==$s) | .attributes.productId' <<<"$SUBS")
+              plan=${pid##*.}; Plan="$(tr '[:lower:]' '[:upper:]' <<<"${plan:0:1}")${plan:1}"
+              case "$plan" in weekly) per=week ;; monthly) per=month ;; yearly) per=year ;; *) per=period ;; esac
+              SL=$(req "$API/subscriptions/$s/subscriptionLocalizations")
+              echo "  $pid: $(jq -c '[.data[] | {l:.attributes.locale, n:.attributes.name}]' <<<"$SL")"
+              if writes; then
+                for sl in $(jq -r '.data[].id' <<<"$SL"); do
+                  req -X PATCH "$API/subscriptionLocalizations/$sl" -d "$(jq -n --arg id "$sl" --arg n "Pippa Companions Pro $Plan" --arg d "Extras in every program, billed each $per." \
+                    '{data:{type:"subscriptionLocalizations",id:$id,attributes:{name:$n,description:$d}}}')" >/dev/null
+                done
+              fi
+            done
+          done
+
+          # -------------------------------------------------------- review notes
+          RD=$(req "$API/appStoreVersions/$VID/appStoreReviewDetail" || echo '{}')
+          echo "review detail: $(jq -c '.data.attributes // {} | {contactEmail, demoAccountName, demoAccountRequired, hasPassword: ((.demoAccountPassword // "") != "")}' <<<"$RD")"
+          RDID=$(jq -r '.data.id // empty' <<<"$RD")
+          if writes && [ -n "$RDID" ]; then
+            req -X PATCH "$API/appStoreReviewDetails/$RDID" -d "$(jq -n --arg id "$RDID" --arg n "$NOTES" \
+              '{data:{type:"appStoreReviewDetails",id:$id,attributes:{notes:$n}}}')" >/dev/null && echo "review notes set"
+          fi
+
+          # --------------------------------------------------------------- build
+          pick_build() {
+            local q="$API/builds?filter%5Bapp%5D=$APP_ID&filter%5BpreReleaseVersion.version%5D=$VERSION&sort=-uploadedDate&limit=10"
+            [ -n "$BUILD_NUMBER" ] && q="$q&filter%5Bversion%5D=$BUILD_NUMBER"
+            req "$q"
+          }
+          B=$(pick_build)
+          echo "builds: $(jq -r '[.data[] | "\(.attributes.version)=\(.attributes.processingState)"] | join(", ")' <<<"$B")"
+          if writes; then
+            for i in $(seq 1 40); do
+              BID=$(jq -r '[.data[] | select(.attributes.processingState == "VALID")][0].id // empty' <<<"$B")
+              [ -n "$BID" ] && break
+              echo "waiting for the build to finish processing ($i)"; sleep 60; B=$(pick_build)
+            done
+            [ -n "$BID" ] || { echo "::error::No valid build of $VERSION${BUILD_NUMBER:+ ($BUILD_NUMBER)}"; exit 1; }
+            req -X PATCH "$API/builds/$BID" -d "$(jq -n --arg id "$BID" '{data:{type:"builds",id:$id,attributes:{usesNonExemptEncryption:false}}}')" >/dev/null || true
+            req -X PATCH "$API/appStoreVersions/$VID/relationships/build" -d "$(jq -n --arg id "$BID" '{data:{type:"builds",id:$id}}')" >/dev/null
+            echo "build $(jq -r --arg b "$BID" '.data[] | select(.id==$b) | .attributes.version' <<<"$B") attached"
+          fi
+
+          # -------------------------------------------------------------- submit
+          RS=$(req "$API/reviewSubmissions?filter%5Bapp%5D=$APP_ID&filter%5Bplatform%5D=IOS&limit=10")
+          echo "review submissions: $(jq -r '[.data[] | "\(.id)=\(.attributes.state)"] | join(", ")' <<<"$RS")"
+          if [ "$MODE" = submit ]; then
+            SUB=$(jq -r '[.data[] | select(.attributes.state == "READY_FOR_REVIEW" or .attributes.state == "UNRESOLVED_ISSUES")][0].id // empty' <<<"$RS")
+            if [ -z "$SUB" ]; then
+              SUB=$(req -X POST "$API/reviewSubmissions" -d "$(jq -n --arg a "$APP_ID" '{data:{type:"reviewSubmissions",attributes:{platform:"IOS"},relationships:{app:{data:{type:"apps",id:$a}}}}}')" | jq -er '.data.id')
+            fi
+            ITEMS=$(req "$API/reviewSubmissions/$SUB/items")
+            if ! jq -e --arg v "$VID" '.data[] | select(.relationships.appStoreVersion.data.id == $v)' <<<"$ITEMS" >/dev/null 2>&1; then
+              req -X POST "$API/reviewSubmissionItems" -d "$(jq -n --arg s "$SUB" --arg v "$VID" \
+                '{data:{type:"reviewSubmissionItems",relationships:{reviewSubmission:{data:{type:"reviewSubmissions",id:$s}},appStoreVersion:{data:{type:"appStoreVersions",id:$v}}}}}')" >/dev/null || echo "item add refused (may already be attached)"
+            fi
+            req -X PATCH "$API/reviewSubmissions/$SUB" -d "$(jq -n --arg id "$SUB" '{data:{type:"reviewSubmissions",id:$id,attributes:{submitted:true}}}')" | jq -r '"submitted: \(.data.attributes.state)"'
+          fi
