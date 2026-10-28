@@ -115,7 +115,7 @@ jobs:
 
           On first launch the app shows a home screen of programs (press and hold an icon to read what it is for). Each area (hydration and POTS, diabetes, bariatric surgery, IBS, recovery after surgery or a new medication, cancer treatment, older adults) has a companion style and a plain style, plus an Eating recovery program for adults. Each program has its own condition-specific logging, care-team connection and safety content, and its own sign-in.
 
-          Demo account: see the sign-in fields. It works in the Kipi program (Diabetes, companion style) and in Eating recovery. Any program also lets you create a new account by email.
+          Demo account: see the sign-in fields. Pick Kipi (Diabetes, companion style) on the first screen, then tap I already have an account. Any program also lets you create a new account by email.
 
           - Subscriptions: one Pippa Companions Pro group (weekly, monthly, yearly), shared by every program. Restore Purchases is on every paywall.
           - HealthKit is read-only and used only in the Diabetes programs, for glucose readings and workouts the person chooses to share.
