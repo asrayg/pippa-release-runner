@@ -191,8 +191,11 @@ jobs:
             for CAP in $CAPS; do
               if [[ " $HAVE " == *" $CAP "* ]]; then echo "$CAP already on."; continue; fi
               echo "Turning on $CAP for $BUNDLE_ID."
-              req -X POST "$API/bundleIdCapabilities" -d "$(jq -n --arg c "$CAP" --arg b "$BID" \
-                '{data:{type:"bundleIdCapabilities",attributes:{capabilityType:$c},relationships:{bundleId:{data:{type:"bundleIds",id:$b}}}}}')" >/dev/null
+              # Sign in with Apple must say which App ID is primary; this one is its own.
+              SETTINGS='[]'
+              [ "$CAP" = APPLE_ID_AUTH ] && SETTINGS='[{"key":"APPLE_ID_AUTH_APP_CONSENT","options":[{"key":"PRIMARY_APP_CONSENT"}]}]'
+              req -X POST "$API/bundleIdCapabilities" -d "$(jq -n --arg c "$CAP" --arg b "$BID" --argjson s "$SETTINGS" \
+                '{data:{type:"bundleIdCapabilities",attributes:{capabilityType:$c,settings:$s},relationships:{bundleId:{data:{type:"bundleIds",id:$b}}}}}')" >/dev/null
             done
 
             CID=$(req "$API/certificates?filter%5BcertificateType%5D=DISTRIBUTION,IOS_DISTRIBUTION&limit=200" \
