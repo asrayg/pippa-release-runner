@@ -160,7 +160,9 @@ jobs:
         run: |
           set -euo pipefail
           PROFILE="$RUNNER_TEMP/app.mobileprovision"
-          case "$APP" in kipi) CAPS="PUSH_NOTIFICATIONS HEALTHKIT" ;; *) CAPS="PUSH_NOTIFICATIONS" ;; esac
+          # kipi = Pippa Companions (all programs): HealthKit for Diabetes, Sign in
+          # with Apple for the hosted Eating recovery program (Nuro).
+          case "$APP" in kipi) CAPS="PUSH_NOTIFICATIONS HEALTHKIT APPLE_ID_AUTH" ;; *) CAPS="PUSH_NOTIFICATIONS" ;; esac
 
           if [ -n "${PROFILE_SECRET:-}" ]; then
             echo "Using the $(echo "$APP" | tr a-z A-Z)_APP_STORE_PROFILE secret."
@@ -272,7 +274,7 @@ jobs:
           ENT=$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)
           echo "$ENT"
           KEYS="aps-environment"
-          [ "$APP" = kipi ] && KEYS="$KEYS com.apple.developer.healthkit"
+          [ "$APP" = kipi ] && KEYS="$KEYS com.apple.developer.healthkit com.apple.developer.applesignin"
           for KEY in $KEYS; do
             if ! echo "$ENT" | grep -q "$KEY"; then
               echo "::error::Archive is missing '$KEY' - refusing to upload."
