@@ -155,7 +155,10 @@ jobs:
           # --------------------------------------------------------- screenshots
           SETS=$(req "$API/appStoreVersionLocalizations/$VLID/appScreenshotSets?include=appScreenshots")
           echo "screenshot sets: $(jq -r '[.data[] | "\(.attributes.screenshotDisplayType)=\(.relationships.appScreenshots.data | length)"] | join(", ")' <<<"$SETS")"
-          if writes; then
+          HAVE_SHOTS=$(jq -r '[.data[] | select(.attributes.screenshotDisplayType == "APP_IPHONE_67") | .relationships.appScreenshots.data | length] | add // 0' <<<"$SETS")
+          WANT_SHOTS=$(ls assets/pippa-companions/screenshots/*.png | wc -l)
+          OTHER_SHOTS=$(jq -r '[.data[] | select(.attributes.screenshotDisplayType != "APP_IPHONE_67") | .relationships.appScreenshots.data | length] | add // 0' <<<"$SETS")
+          if writes && { [ "$HAVE_SHOTS" -ne "$WANT_SHOTS" ] || [ "$OTHER_SHOTS" -ne 0 ]; }; then
             for sid in $(jq -r '.data[].relationships.appScreenshots.data[]?.id' <<<"$SETS"); do req -X DELETE "$API/appScreenshots/$sid" >/dev/null; done
             SET=$(jq -r '[.data[] | select(.attributes.screenshotDisplayType == "APP_IPHONE_67")][0].id // empty' <<<"$SETS")
             if [ -z "$SET" ]; then
@@ -246,5 +249,12 @@ jobs:
               req -X POST "$API/reviewSubmissionItems" -d "$(jq -n --arg s "$SUB" --arg v "$VID" \
                 '{data:{type:"reviewSubmissionItems",relationships:{reviewSubmission:{data:{type:"reviewSubmissions",id:$s}},appStoreVersion:{data:{type:"appStoreVersions",id:$v}}}}}')" >/dev/null || echo "item add refused (may already be attached)"
             fi
-            req -X PATCH "$API/reviewSubmissions/$SUB" -d "$(jq -n --arg id "$SUB" '{data:{type:"reviewSubmissions",id:$id,attributes:{submitted:true}}}')" | jq -r '"submitted: \(.data.attributes.state)"'
+            # Fresh screenshots take a few minutes to process; Apple refuses until they're done.
+            for i in $(seq 1 20); do
+              if OUT=$(req -X PATCH "$API/reviewSubmissions/$SUB" -d "$(jq -n --arg id "$SUB" '{data:{type:"reviewSubmissions",id:$id,attributes:{submitted:true}}}')" 2>/dev/null); then
+                jq -r '"submitted: \(.data.attributes.state)"' <<<"$OUT"; exit 0
+              fi
+              echo "not ready yet ($i), retrying in 60s"; sleep 60
+            done
+            echo "::error::Apple still refused the submission after 20 minutes"; exit 1
           fi
