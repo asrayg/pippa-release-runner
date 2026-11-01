@@ -173,6 +173,32 @@ jobs:
               && echo "age rating set (Made for Kids 6-8)" || echo "::warning::age rating not set; set it in App Store Connect"
           fi
 
+          # ----------------------------- content rights, price, availability
+          if writes; then
+            # Food icons are ISC-licensed (foodicon) and the voice is Kokoro (Apache-2.0).
+            req -X PATCH "$API/apps/$APP_ID" -d "$(jq -n --arg id "$APP_ID" \
+              '{data:{type:"apps",id:$id,attributes:{contentRightsDeclaration:"USES_THIRD_PARTY_CONTENT"}}}')" >/dev/null \
+              && echo "content rights set" || echo "::warning::content rights not set"
+            if ! req "$API/apps/$APP_ID/appPriceSchedule/manualPrices?limit=1" 2>/dev/null | jq -e '.data | length > 0' >/dev/null; then
+              PP=$(req "$API/apps/$APP_ID/appPricePoints?filter%5Bterritory%5D=USA&limit=200" | jq -er '[.data[] | select(.attributes.customerPrice == "0.0" or .attributes.customerPrice == "0")][0].id')
+              req -X POST "$API/appPriceSchedules" -d "$(jq -n --arg a "$APP_ID" --arg pp "$PP" '{
+                data:{type:"appPriceSchedules",relationships:{app:{data:{type:"apps",id:$a}},
+                  baseTerritory:{data:{type:"territories",id:"USA"}},
+                  manualPrices:{data:[{type:"appPrices",id:"${price-free}"}]}}},
+                included:[{type:"appPrices",id:"${price-free}",attributes:{startDate:null},
+                  relationships:{appPricePoint:{data:{type:"appPricePoints",id:$pp}}}}]}')" >/dev/null \
+                && echo "price set: free" || echo "::warning::price not set"
+            else echo "price already set"; fi
+            # United States only, like Pippa (international is parked).
+            req -X POST "https://api.appstoreconnect.apple.com/v2/appAvailabilities" -d "$(jq -n --arg a "$APP_ID" '{
+              data:{type:"appAvailabilities",attributes:{availableInNewTerritories:false},
+                relationships:{app:{data:{type:"apps",id:$a}},
+                  territoryAvailabilities:{data:[{type:"territoryAvailabilities",id:"${t-usa}"}]}}},
+              included:[{type:"territoryAvailabilities",id:"${t-usa}",attributes:{available:true},
+                relationships:{territory:{data:{type:"territories",id:"USA"}}}}]}')" >/dev/null \
+              && echo "availability set: United States" || echo "::warning::availability not set (may already exist)"
+          fi
+
           # ---------------------------------------------------- version metadata
           VL=$(req "$API/appStoreVersions/$VID/appStoreVersionLocalizations")
           echo "version locales: $(jq -r '[.data[].attributes.locale] | join(", ")' <<<"$VL")"
@@ -215,9 +241,14 @@ jobs:
           RD=$(req "$API/appStoreVersions/$VID/appStoreReviewDetail" || echo '{}')
           echo "review detail: $(jq -c '.data.attributes // {} | {contactEmail, demoAccountName, demoAccountRequired, hasPassword: ((.demoAccountPassword // "") != "")}' <<<"$RD")"
           RDID=$(jq -r '.data.id // empty' <<<"$RD")
+          if writes && [ -z "$RDID" ]; then
+            RDID=$(req -X POST "$API/appStoreReviewDetails" -d "$(jq -n --arg v "$VID" '{data:{type:"appStoreReviewDetails",
+              attributes:{contactFirstName:"Asray",contactLastName:"Gopa",contactPhone:"+1 714 787 9947",contactEmail:"pippa.app.general@gmail.com",demoAccountRequired:true},
+              relationships:{appStoreVersion:{data:{type:"appStoreVersions",id:$v}}}}}')" | jq -er '.data.id') && echo "review contact created"
+          fi
           if writes && [ -n "$RDID" ]; then
             req -X PATCH "$API/appStoreReviewDetails/$RDID" -d "$(jq -n --arg id "$RDID" --arg n "$NOTES" \
-              '{data:{type:"appStoreReviewDetails",id:$id,attributes:{notes:$n}}}')" >/dev/null && echo "review notes set"
+              '{data:{type:"appStoreReviewDetails",id:$id,attributes:{notes:$n,contactFirstName:"Asray",contactLastName:"Gopa",contactPhone:"+1 714 787 9947",contactEmail:"pippa.app.general@gmail.com"}}}')" >/dev/null && echo "review notes set"
           fi
 
           # --------------------------------------------------------------- build
