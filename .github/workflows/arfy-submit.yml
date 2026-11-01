@@ -1,0 +1,248 @@
+name: Arfy App Store submission
+
+# Arfy (6829486672, com.getpippa.app.Arfy): sets metadata, category, age
+# rating (Made for Kids, 6-8), screenshots and review notes through the App
+# Store Connect API, attaches a build, and (mode=submit) sends it to review.
+# App Privacy answers, price and availability are set in App Store Connect.
+#
+#   inspect  print what is there now, change nothing
+#   apply    update metadata, screenshots, review notes, build
+#   submit   apply, then submit for review
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: inspect, apply or submit
+        required: true
+        default: inspect
+        type: choice
+        options: [inspect, apply, submit]
+      build_number:
+        description: Build number (CFBundleVersion) to attach; blank = newest valid build of 1.0.0
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    environment: app-store
+    timeout-minutes: 90
+    env:
+      APP_ID: '6829486672'
+      VERSION: '1.0.0'
+      MODE: ${{ inputs.mode }}
+      BUILD_NUMBER: ${{ inputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$ASC_API_KEY_P8" > "$key"; chmod 600 "$key"
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          mint() {
+            local now exp header payload sig
+            now=$(date +%s); exp=$((now + 1100))
+            header=$(printf '{"alg":"ES256","kid":"%s","typ":"JWT"}' "$ASC_KEY_ID" | b64url)
+            payload=$(printf '{"iss":"%s","iat":%s,"exp":%s,"aud":"appstoreconnect-v1"}' "$ASC_ISSUER_ID" "$now" "$exp" | b64url)
+            sig=$(printf '%s' "$header.$payload" | openssl dgst -sha256 -sign "$key" \
+              | ruby -ropenssl -e 'sig = OpenSSL::ASN1.decode(STDIN.binmode.read); print sig.value.map { |i| i.value.to_s(2).rjust(32, "\0") }.join' | b64url)
+            TOKEN="$header.$payload.$sig"; TOKEN_AT=$now
+          }
+          mint
+          API=https://api.appstoreconnect.apple.com/v1
+          req() {
+            [ $(( $(date +%s) - TOKEN_AT )) -gt 900 ] && mint
+            local out code
+            out=$(curl --silent --show-error -w '\n%{http_code}' -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@")
+            code=$(tail -n1 <<<"$out"); out=$(sed '$d' <<<"$out")
+            if [ "$code" -ge 400 ]; then echo "::error::HTTP $code for $*" >&2; echo "$out" >&2; return 1; fi
+            printf '%s' "$out"
+          }
+          writes() { [ "$MODE" != inspect ]; }
+
+          # ---------------------------------------------------------------- copy
+          NAME='Arfy - Food Play for Kids'
+          SUBTITLE='Meet new foods with a friend'
+          PRIVACY_URL='https://legal.getpippa.app/arfy-privacy'
+          SUPPORT_URL='https://legal.getpippa.app/arfy-support'
+          KEYWORDS='picky eater,kids food,new foods,food play,taste,toddler,feeding,family,mealtime,pup'
+          PROMO='Arfy loves to taste new things. Show him your food, feed him a bite, and plant it in the Taste Garden.'
+          read -r -d '' DESCRIPTION <<'TXT' || true
+          Arfy is a friendly pup who is curious about food. Kids show Arfy what is on their plate, feed him a bite, and watch him munch. There are no scores to chase and no plates to finish. Every look, sniff and lick counts.
+
+          FOR KIDS
+          - Show Arfy your food with the big camera button, then pick an icon to feed him
+          - Watch Arfy chomp, chew and say thank you
+          - Plant foods you have met in the Taste Garden
+          - Dress Arfy up with outfits
+          - Play little games: feed Arfy, match foods, peekaboo and more
+          - Arfy talks out loud, so kids who are still learning to read can play
+
+          FOR GROWN-UPS
+          - Everything for grown-ups sits behind your account password
+          - A meal calendar of what your child showed Arfy, with gentle "how did it go?" notes
+          - A list of foods to explore together
+          - Calm, playful or cozy music, or none
+          - Copy or delete your family's data any time from Settings
+
+          GENTLE BY DESIGN
+          Arfy never says a food is good or bad, never counts bites, and never asks a child to finish. There are no ads, no purchases and no tracking. Photos stay on your phone.
+
+          Arfy is a play app. It does not diagnose or treat any condition. If you are worried about your child's eating, talk to your child's doctor.
+
+          Available in English, Spanish, French and Simplified Chinese.
+
+          Terms of Use (EULA): https://legal.getpippa.app/arfy-terms
+          Privacy Policy: https://legal.getpippa.app/arfy-privacy
+          TXT
+          DESCRIPTION=$(sed 's/^          //' <<<"$DESCRIPTION")
+          read -r -d '' NOTES <<'TXT' || true
+          Arfy has two sides in one app. Children (4 to 9) play with Arfy: show him food with the camera, feed him, the Taste Garden, dress up and games. The child side has no links, no purchases, no settings and no typing.
+
+          Everything for grown-ups (Settings, the meal calendar, camera permission and every link that leaves the app) is behind a parental gate that asks for the parent's account password. Demo account: see the sign-in fields. On first launch tap "I already have an account". The same password opens the grown-up gate (the lock buttons at the top right of Home).
+
+          - No in-app purchases, ads, analytics or third-party SDKs.
+          - Photos stay on the device. Only meal entries (no images) sync to our server so a parent's second phone sees them.
+          - Account deletion: grown-up gate, Settings, Delete account. Also https://legal.getpippa.app/arfy-delete-account
+          - Arfy does not diagnose or treat any condition.
+          Contact: pippa.app.general@gmail.com
+          TXT
+          NOTES=$(sed 's/^          //' <<<"$NOTES")
+          echo "description ${#DESCRIPTION} chars, keywords ${#KEYWORDS}, subtitle ${#SUBTITLE}, notes ${#NOTES}"
+
+          # ------------------------------------------------------------- version
+          V=$(req "$API/apps/$APP_ID/appStoreVersions?filter%5Bplatform%5D=IOS&limit=20")
+          echo "versions: $(jq -r '[.data[] | "\(.attributes.versionString)=\(.attributes.appStoreState)"] | join(", ")' <<<"$V")"
+          VID=$(jq -er --arg v "$VERSION" '[.data[] | select(.attributes.versionString == $v)][0].id' <<<"$V")
+
+          # ------------------------------------------------------------ app info
+          INFOS=$(req "$API/apps/$APP_ID/appInfos")
+          INFO=$(jq -er '[.data[] | select(.attributes.appStoreState != "READY_FOR_SALE")][0].id // .data[0].id' <<<"$INFOS")
+          IL=$(req "$API/appInfos/$INFO/appInfoLocalizations")
+          echo "app info: $(jq -c '[.data[] | {l:.attributes.locale, name:.attributes.name, sub:.attributes.subtitle}]' <<<"$IL")"
+          ILID=$(jq -er '[.data[] | select(.attributes.locale == "en-US")][0].id' <<<"$IL")
+          if writes; then
+            req -X PATCH "$API/appInfoLocalizations/$ILID" -d "$(jq -n --arg id "$ILID" --arg n "$NAME" --arg s "$SUBTITLE" --arg p "$PRIVACY_URL" \
+              '{data:{type:"appInfoLocalizations",id:$id,attributes:{name:$n,subtitle:$s,privacyPolicyUrl:$p}}}')" >/dev/null && echo "name and subtitle set"
+          fi
+
+          # ------------------------------------------------ category, age rating
+          if writes; then
+            req -X PATCH "$API/appInfos/$INFO" -d "$(jq -n --arg id "$INFO" \
+              '{data:{type:"appInfos",id:$id,relationships:{primaryCategory:{data:{type:"appCategories",id:"EDUCATION"}},secondaryCategory:{data:{type:"appCategories",id:"GAMES"}},secondarySubcategoryOne:{data:{type:"appCategories",id:"GAMES_FAMILY"}}}}}')" >/dev/null \
+              && echo "category set" || echo "::warning::category not set; set it in App Store Connect"
+            AR=$(req "$API/appInfos/$INFO/ageRatingDeclaration")
+            ARID=$(jq -er '.data.id' <<<"$AR")
+            echo "age rating now: $(jq -c '.data.attributes' <<<"$AR")"
+            ATTRS=$(jq -c '.data.attributes | with_entries(
+                if (.value|type) == "boolean" then .value = false
+                elif (.value|type) == "string" and (.value == "NONE" or .value == "INFREQUENT_OR_MILD" or .value == "FREQUENT_OR_INTENSE") then .value = "NONE"
+                else . end)
+              | del(.ageRatingOverride, .ageRatingOverrideV2, .koreaAgeRatingOverride, .contentRightsDeclaration)
+              | with_entries(select(.value != null)) | .kidsAgeBand = "SIX_TO_EIGHT"' <<<"$AR")
+            echo "age rating to set: $ATTRS"
+            req -X PATCH "$API/ageRatingDeclarations/$ARID" -d "$(jq -n --arg id "$ARID" --argjson a "$ATTRS" \
+              '{data:{type:"ageRatingDeclarations",id:$id,attributes:$a}}')" >/dev/null \
+              && echo "age rating set (Made for Kids 6-8)" || echo "::warning::age rating not set; set it in App Store Connect"
+          fi
+
+          # ---------------------------------------------------- version metadata
+          VL=$(req "$API/appStoreVersions/$VID/appStoreVersionLocalizations")
+          echo "version locales: $(jq -r '[.data[].attributes.locale] | join(", ")' <<<"$VL")"
+          VLID=$(jq -er '[.data[] | select(.attributes.locale == "en-US")][0].id' <<<"$VL")
+          if writes; then
+            req -X PATCH "$API/appStoreVersionLocalizations/$VLID" -d "$(jq -n --arg id "$VLID" --arg d "$DESCRIPTION" --arg k "$KEYWORDS" --arg p "$PROMO" --arg su "$SUPPORT_URL" \
+              '{data:{type:"appStoreVersionLocalizations",id:$id,attributes:{description:$d,keywords:$k,promotionalText:$p,supportUrl:$su}}}')" >/dev/null && echo "description set"
+          fi
+
+          # --------------------------------------------------------- screenshots
+          SETS=$(req "$API/appStoreVersionLocalizations/$VLID/appScreenshotSets?include=appScreenshots")
+          echo "screenshot sets: $(jq -r '[.data[] | "\(.attributes.screenshotDisplayType)=\(.relationships.appScreenshots.data | length)"] | join(", ")' <<<"$SETS")"
+          HAVE_SHOTS=$(jq -r '[.data[] | select(.attributes.screenshotDisplayType == "APP_IPHONE_67") | .relationships.appScreenshots.data | length] | add // 0' <<<"$SETS")
+          WANT_SHOTS=$(ls assets/arfy/screenshots/*.png | wc -l)
+          OTHER_SHOTS=$(jq -r '[.data[] | select(.attributes.screenshotDisplayType != "APP_IPHONE_67") | .relationships.appScreenshots.data | length] | add // 0' <<<"$SETS")
+          if writes && { [ "$HAVE_SHOTS" -ne "$WANT_SHOTS" ] || [ "$OTHER_SHOTS" -ne 0 ]; }; then
+            for sid in $(jq -r '.data[].relationships.appScreenshots.data[]?.id' <<<"$SETS"); do req -X DELETE "$API/appScreenshots/$sid" >/dev/null; done
+            SET=$(jq -r '[.data[] | select(.attributes.screenshotDisplayType == "APP_IPHONE_67")][0].id // empty' <<<"$SETS")
+            if [ -z "$SET" ]; then
+              SET=$(req -X POST "$API/appScreenshotSets" -d "$(jq -n --arg l "$VLID" \
+                '{data:{type:"appScreenshotSets",attributes:{screenshotDisplayType:"APP_IPHONE_67"},relationships:{appStoreVersionLocalization:{data:{type:"appStoreVersionLocalizations",id:$l}}}}}')" | jq -er '.data.id')
+            fi
+            for f in assets/arfy/screenshots/*.png; do
+              size=$(stat -c %s "$f"); name=$(basename "$f")
+              R=$(req -X POST "$API/appScreenshots" -d "$(jq -n --arg n "$name" --argjson s "$size" --arg set "$SET" \
+                '{data:{type:"appScreenshots",attributes:{fileName:$n,fileSize:$s},relationships:{appScreenshotSet:{data:{type:"appScreenshotSets",id:$set}}}}}')")
+              SHOT=$(jq -er '.data.id' <<<"$R")
+              jq -c '.data.attributes.uploadOperations[]' <<<"$R" | while read -r op; do
+                url=$(jq -r .url <<<"$op"); off=$(jq -r .offset <<<"$op"); len=$(jq -r .length <<<"$op")
+                hdrs=(); while read -r h; do hdrs+=(-H "$h"); done < <(jq -r '.requestHeaders[] | "\(.name): \(.value)"' <<<"$op")
+                tail -c +$((off + 1)) "$f" | head -c "$len" | curl --fail --silent --show-error -X "$(jq -r .method <<<"$op")" "${hdrs[@]}" --data-binary @- "$url" >/dev/null
+              done
+              md5=$(md5sum "$f" | cut -d' ' -f1)
+              req -X PATCH "$API/appScreenshots/$SHOT" -d "$(jq -n --arg id "$SHOT" --arg m "$md5" '{data:{type:"appScreenshots",id:$id,attributes:{uploaded:true,sourceFileChecksum:$m}}}')" >/dev/null
+              echo "uploaded $name"
+            done
+          fi
+
+          # -------------------------------------------------------- review notes
+          RD=$(req "$API/appStoreVersions/$VID/appStoreReviewDetail" || echo '{}')
+          echo "review detail: $(jq -c '.data.attributes // {} | {contactEmail, demoAccountName, demoAccountRequired, hasPassword: ((.demoAccountPassword // "") != "")}' <<<"$RD")"
+          RDID=$(jq -r '.data.id // empty' <<<"$RD")
+          if writes && [ -n "$RDID" ]; then
+            req -X PATCH "$API/appStoreReviewDetails/$RDID" -d "$(jq -n --arg id "$RDID" --arg n "$NOTES" \
+              '{data:{type:"appStoreReviewDetails",id:$id,attributes:{notes:$n}}}')" >/dev/null && echo "review notes set"
+          fi
+
+          # --------------------------------------------------------------- build
+          pick_build() {
+            local q="$API/builds?filter%5Bapp%5D=$APP_ID&filter%5BpreReleaseVersion.version%5D=$VERSION&sort=-uploadedDate&limit=10"
+            [ -n "$BUILD_NUMBER" ] && q="$q&filter%5Bversion%5D=$BUILD_NUMBER"
+            req "$q"
+          }
+          B=$(pick_build)
+          echo "builds: $(jq -r '[.data[] | "\(.attributes.version)=\(.attributes.processingState)"] | join(", ")' <<<"$B")"
+          if writes; then
+            for i in $(seq 1 40); do
+              BID=$(jq -r '[.data[] | select(.attributes.processingState == "VALID")][0].id // empty' <<<"$B")
+              [ -n "$BID" ] && break
+              echo "waiting for the build to finish processing ($i)"; sleep 60; B=$(pick_build)
+            done
+            [ -n "$BID" ] || { echo "::error::No valid build of $VERSION${BUILD_NUMBER:+ ($BUILD_NUMBER)}"; exit 1; }
+            req -X PATCH "$API/builds/$BID" -d "$(jq -n --arg id "$BID" '{data:{type:"builds",id:$id,attributes:{usesNonExemptEncryption:false}}}')" >/dev/null || true
+            req -X PATCH "$API/appStoreVersions/$VID/relationships/build" -d "$(jq -n --arg id "$BID" '{data:{type:"builds",id:$id}}')" >/dev/null
+            echo "build $(jq -r --arg b "$BID" '.data[] | select(.id==$b) | .attributes.version' <<<"$B") attached"
+          fi
+
+          # -------------------------------------------------------------- submit
+          RS=$(req "$API/reviewSubmissions?filter%5Bapp%5D=$APP_ID&filter%5Bplatform%5D=IOS&limit=10")
+          echo "review submissions: $(jq -r '[.data[] | "\(.id)=\(.attributes.state)"] | join(", ")' <<<"$RS")"
+          if [ "$MODE" = submit ]; then
+            SUB=$(jq -r '[.data[] | select(.attributes.state == "READY_FOR_REVIEW" or .attributes.state == "UNRESOLVED_ISSUES")][0].id // empty' <<<"$RS")
+            if [ -z "$SUB" ]; then
+              SUB=$(req -X POST "$API/reviewSubmissions" -d "$(jq -n --arg a "$APP_ID" '{data:{type:"reviewSubmissions",attributes:{platform:"IOS"},relationships:{app:{data:{type:"apps",id:$a}}}}}')" | jq -er '.data.id')
+            fi
+            ITEMS=$(req "$API/reviewSubmissions/$SUB/items")
+            if ! jq -e --arg v "$VID" '.data[] | select(.relationships.appStoreVersion.data.id == $v)' <<<"$ITEMS" >/dev/null 2>&1; then
+              req -X POST "$API/reviewSubmissionItems" -d "$(jq -n --arg s "$SUB" --arg v "$VID" \
+                '{data:{type:"reviewSubmissionItems",relationships:{reviewSubmission:{data:{type:"reviewSubmissions",id:$s}},appStoreVersion:{data:{type:"appStoreVersions",id:$v}}}}}')" >/dev/null || echo "item add refused (may already be attached)"
+            fi
+            # Fresh screenshots take a few minutes to process; Apple refuses until they're done.
+            for i in $(seq 1 20); do
+              if OUT=$(req -X PATCH "$API/reviewSubmissions/$SUB" -d "$(jq -n --arg id "$SUB" '{data:{type:"reviewSubmissions",id:$id,attributes:{submitted:true}}}')" 2>/dev/null); then
+                jq -r '"submitted: \(.data.attributes.state)"' <<<"$OUT"; exit 0
+              fi
+              echo "not ready yet ($i), retrying in 60s"; sleep 60
+            done
+            echo "::error::Apple still refused the submission after 20 minutes"; exit 1
+          fi
