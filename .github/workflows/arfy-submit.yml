@@ -189,13 +189,17 @@ jobs:
                   relationships:{appPricePoint:{data:{type:"appPricePoints",id:$pp}}}}]}')" >/dev/null \
                 && echo "price set: free" || echo "::warning::price not set"
             else echo "price already set"; fi
-            # United States only, like Pippa (international is parked).
-            req -X POST "https://api.appstoreconnect.apple.com/v2/appAvailabilities" -d "$(jq -n --arg a "$APP_ID" '{
+            # United States only, like Pippa (international is parked). Apple wants
+            # every territory listed, each marked available or not.
+            TERR=$(req "$API/territories?limit=200" | jq -c '[.data[].id]')
+            BODY=$(jq -n --arg a "$APP_ID" --argjson t "$TERR" '{
               data:{type:"appAvailabilities",attributes:{availableInNewTerritories:false},
                 relationships:{app:{data:{type:"apps",id:$a}},
-                  territoryAvailabilities:{data:[{type:"territoryAvailabilities",id:"${t-usa}"}]}}},
-              included:[{type:"territoryAvailabilities",id:"${t-usa}",attributes:{available:true},
-                relationships:{territory:{data:{type:"territories",id:"USA"}}}}]}')" >/dev/null \
+                  territoryAvailabilities:{data:[$t[] | {type:"territoryAvailabilities",id:("${t-" + . + "}")}]}}},
+              included:([$t[] | {type:"territoryAvailabilities",id:("${t-" + . + "}"),attributes:{available:(. == "USA")},
+                relationships:{territory:{data:{type:"territories",id:.}}}}]
+                + [$t[] | {type:"territories",id:.}])}')
+            req -X POST "https://api.appstoreconnect.apple.com/v2/appAvailabilities" -d "$BODY" >/dev/null \
               && echo "availability set: United States" || echo "::warning::availability not set (may already exist)"
           fi
 
