@@ -124,7 +124,15 @@ jobs:
           # ------------------------------------------------------------- version
           V=$(req "$API/apps/$APP_ID/appStoreVersions?filter%5Bplatform%5D=IOS&limit=20")
           echo "versions: $(jq -r '[.data[] | "\(.attributes.versionString)=\(.attributes.appStoreState)"] | join(", ")' <<<"$V")"
-          VID=$(jq -er --arg v "$VERSION" '[.data[] | select(.attributes.versionString == $v)][0].id' <<<"$V")
+          VID=$(jq -r --arg v "$VERSION" '[.data[] | select(.attributes.versionString == $v)][0].id // empty' <<<"$V")
+          if [ -z "$VID" ]; then
+            # A new record starts at "1.0"; the build is 1.0.0, so rename the draft version.
+            VID=$(jq -er '[.data[] | select(.attributes.appStoreState == "PREPARE_FOR_SUBMISSION")][0].id' <<<"$V")
+            if writes; then
+              req -X PATCH "$API/appStoreVersions/$VID" -d "$(jq -n --arg id "$VID" --arg v "$VERSION" \
+                '{data:{type:"appStoreVersions",id:$id,attributes:{versionString:$v}}}')" >/dev/null && echo "version renamed to $VERSION"
+            fi
+          fi
 
           # ------------------------------------------------------------ app info
           INFOS=$(req "$API/apps/$APP_ID/appInfos")
