@@ -2,8 +2,8 @@ name: Upload Arfy to Google Play
 
 # Arfy (Arfy-android/ in pippa-mono): the kids' food-play app,
 # com.getpippa.app.Arfy, "free" flavor. No Firebase and no push.
-# Signs with the app family's upload keystore, the same secrets as
-# companion-android.yml.
+# Signs with the Pippa upload keystore (PIPPA_ANDROID_*); Play App Signing
+# holds the real app signing key, so sharing the upload key is fine.
 
 on:
   workflow_dispatch:
@@ -98,21 +98,21 @@ jobs:
 
       - name: Install the upload keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.FAMILY_ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.FAMILY_ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.FAMILY_ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.FAMILY_ANDROID_KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.PIPPA_ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.PIPPA_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.PIPPA_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.PIPPA_ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::FAMILY_ANDROID_KEYSTORE_BASE64 is not set. Play only accepts a signed bundle."
+            echo "::error::PIPPA_ANDROID_KEYSTORE_BASE64 is not set. Play only accepts a signed bundle."
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/keys"
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keys/family-upload.jks"
-          chmod 600 "$RUNNER_TEMP/keys/family-upload.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keys/upload.jks"
+          chmod 600 "$RUNNER_TEMP/keys/upload.jks"
           {
-            echo "RELEASE_STORE_FILE=$RUNNER_TEMP/keys/family-upload.jks"
+            echo "RELEASE_STORE_FILE=$RUNNER_TEMP/keys/upload.jks"
             echo "RELEASE_STORE_PASSWORD=$STORE_PASSWORD"
             echo "RELEASE_KEY_ALIAS=$KEY_ALIAS"
             echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
@@ -142,7 +142,7 @@ jobs:
         if: inputs.upload
         uses: r0adkll/upload-google-play@v1
         with:
-          serviceAccountJsonPlainText: ${{ secrets.FAMILY_PLAY_SERVICE_ACCOUNT_JSON || secrets.PIPPA_PLAY_SERVICE_ACCOUNT_JSON }}
+          serviceAccountJsonPlainText: ${{ secrets.PIPPA_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: ${{ env.PACKAGE }}
           releaseFiles: ${{ env.AAB }}
           track: ${{ inputs.track }}
