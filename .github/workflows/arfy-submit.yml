@@ -153,12 +153,20 @@ jobs:
             AR=$(req "$API/appInfos/$INFO/ageRatingDeclaration")
             ARID=$(jq -er '.data.id' <<<"$AR")
             echo "age rating now: $(jq -c '.data.attributes' <<<"$AR")"
-            ATTRS=$(jq -c '.data.attributes | with_entries(
-                if (.value|type) == "boolean" then .value = false
-                elif (.value|type) == "string" and (.value == "NONE" or .value == "INFREQUENT_OR_MILD" or .value == "FREQUENT_OR_INTENSE") then .value = "NONE"
-                else . end)
-              | del(.ageRatingOverride, .ageRatingOverrideV2, .koreaAgeRatingOverride, .contentRightsDeclaration)
-              | with_entries(select(.value != null)) | .kidsAgeBand = "SIX_TO_EIGHT"' <<<"$AR")
+            # Every answer is explicit (Apple requires all of them on a PATCH).
+            # Intensity questions: NONE. parentalControls true: the grown-up
+            # password gate. No chat, ads, web, user content shared, health info.
+            ATTRS=$(jq -nc '{
+              alcoholTobaccoOrDrugUseOrReferences:"NONE", contests:"NONE", gamblingSimulated:"NONE",
+              gunsOrOtherWeapons:"NONE", horrorOrFearThemes:"NONE", matureOrSuggestiveThemes:"NONE",
+              medicalOrTreatmentInformation:"NONE", profanityOrCrudeHumor:"NONE",
+              sexualContentGraphicAndNudity:"NONE", sexualContentOrNudity:"NONE",
+              violenceCartoonOrFantasy:"NONE", violenceRealistic:"NONE",
+              violenceRealisticProlongedGraphicOrSadistic:"NONE",
+              gambling:false, lootBox:false, unrestrictedWebAccess:false, messagingAndChat:false,
+              parentalControls:true, ageAssurance:false, userGeneratedContent:false,
+              advertising:false, socialMedia:false, healthOrWellnessTopics:false,
+              kidsAgeBand:"SIX_TO_EIGHT"}')
             echo "age rating to set: $ATTRS"
             req -X PATCH "$API/ageRatingDeclarations/$ARID" -d "$(jq -n --arg id "$ARID" --argjson a "$ATTRS" \
               '{data:{type:"ageRatingDeclarations",id:$id,attributes:$a}}')" >/dev/null \
@@ -227,7 +235,6 @@ jobs:
               echo "waiting for the build to finish processing ($i)"; sleep 60; B=$(pick_build)
             done
             [ -n "$BID" ] || { echo "::error::No valid build of $VERSION${BUILD_NUMBER:+ ($BUILD_NUMBER)}"; exit 1; }
-            req -X PATCH "$API/builds/$BID" -d "$(jq -n --arg id "$BID" '{data:{type:"builds",id:$id,attributes:{usesNonExemptEncryption:false}}}')" >/dev/null || true
             req -X PATCH "$API/appStoreVersions/$VID/relationships/build" -d "$(jq -n --arg id "$BID" '{data:{type:"builds",id:$id}}')" >/dev/null
             echo "build $(jq -r --arg b "$BID" '.data[] | select(.id==$b) | .attributes.version' <<<"$B") attached"
           fi
