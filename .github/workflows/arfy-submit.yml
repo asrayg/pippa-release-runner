@@ -202,6 +202,11 @@ jobs:
               && echo "availability set: United States" || echo "::warning::availability not set (may already exist)"
           fi
 
+          if writes; then
+            req -X PATCH "$API/appStoreVersions/$VID" -d "$(jq -n --arg id "$VID" \
+              '{data:{type:"appStoreVersions",id:$id,attributes:{copyright:"2026 Pippa LLC"}}}')" >/dev/null && echo "copyright set"
+          fi
+
           # ---------------------------------------------------- version metadata
           VL=$(req "$API/appStoreVersions/$VID/appStoreVersionLocalizations")
           echo "version locales: $(jq -r '[.data[].attributes.locale] | join(", ")' <<<"$VL")"
