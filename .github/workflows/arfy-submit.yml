@@ -197,8 +197,7 @@ jobs:
                 relationships:{app:{data:{type:"apps",id:$a}},
                   territoryAvailabilities:{data:[$t[] | {type:"territoryAvailabilities",id:("${t-" + . + "}")}]}}},
               included:([$t[] | {type:"territoryAvailabilities",id:("${t-" + . + "}"),attributes:{available:(. == "USA")},
-                relationships:{territory:{data:{type:"territories",id:.}}}}]
-                + [$t[] | {type:"territories",id:.}])}')
+                relationships:{territory:{data:{type:"territories",id:.}}}}]))}')
             req -X POST "https://api.appstoreconnect.apple.com/v2/appAvailabilities" -d "$BODY" >/dev/null \
               && echo "availability set: United States" || echo "::warning::availability not set (may already exist)"
           fi
