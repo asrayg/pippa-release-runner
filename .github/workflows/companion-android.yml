@@ -178,15 +178,17 @@ jobs:
             exit 1
           fi
 
-      # One upload keystore for the seven apps, held as a base64 secret and
+      # Pippa's upload keystore (the one arfy-android.yml signs with) is used
+      # while no FAMILY_ANDROID_* keystore is set. Otherwise: one upload
+      # keystore for the seven apps, held as a base64 secret and
       # handed to Android/build.gradle.kts through the environment (it reads
       # RELEASE_STORE_FILE and friends, per-app <APP>_ keys first).
       - name: Install the upload keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.FAMILY_ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.FAMILY_ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.FAMILY_ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.FAMILY_ANDROID_KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.FAMILY_ANDROID_KEYSTORE_BASE64 || secrets.PIPPA_ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.FAMILY_ANDROID_KEYSTORE_PASSWORD || secrets.PIPPA_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.FAMILY_ANDROID_KEY_ALIAS || secrets.PIPPA_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.FAMILY_ANDROID_KEY_PASSWORD || secrets.PIPPA_ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "$KEYSTORE_BASE64" ]; then
