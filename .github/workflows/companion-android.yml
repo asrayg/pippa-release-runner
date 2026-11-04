@@ -4,6 +4,9 @@ name: Upload companion apps to Google Play
 # They live in pippa-mono's Android/ Gradle build as :apps:<app>; the package
 # name comes from contracts/product-registry/release.json on main.
 #
+# Grove (the 18+ sobriety garden app, com.getpippa.app.Grove) is listed too but
+# is not part of "all": pick it on its own.
+#
 # The Nuro-side structured apps (Vela, Aven, Onda, Sero, Talo, Elio, Aster)
 # are on hold and deliberately not listed.
 #
@@ -28,6 +31,7 @@ on:
           - rumi
           - miya
           - nomi
+          - grove
       version_name:
         description: Version name shown in Play
         required: true
@@ -162,6 +166,14 @@ jobs:
           OUT="source/Android/apps/$APP/google-services.json"
           printf '%s' "$GOOGLE_SERVICES_JSON" > "$OUT"
           if ! jq -e --arg p "$PACKAGE" '[.client[].client_info.android_client_info.package_name] | index($p)' "$OUT" >/dev/null; then
+            if [ "$APP" = grove ]; then
+              # Grove runs fine without FCM (local reminders keep working; only
+              # care-team push is off), so a missing client is a warning until
+              # com.getpippa.app.Grove is added to Firebase project pippa-35814.
+              echo "::warning::No Firebase client for $PACKAGE yet; Grove ships without remote push."
+              rm -f "$OUT"
+              exit 0
+            fi
             echo "::error::FAMILY_GOOGLE_SERVICES_JSON has no Firebase client for $PACKAGE."
             exit 1
           fi
