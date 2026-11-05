@@ -63,6 +63,11 @@ on:
         required: true
         default: true
         type: boolean
+      changes_not_sent_for_review:
+        description: Commit without sending for review (Play requires this after a rejection; then press "Send for review" in the Console)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -239,6 +244,7 @@ jobs:
           mappingFile: source/Android/apps/${{ matrix.app }}/build/outputs/mapping/release/mapping.txt
           track: ${{ inputs.track }}
           status: ${{ inputs.status }}
+          changesNotSentForReview: ${{ inputs.changes_not_sent_for_review }}
 
       - name: Keep the bundle for the record
         if: always()
